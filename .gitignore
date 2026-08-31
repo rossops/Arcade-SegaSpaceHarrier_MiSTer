@@ -50,6 +50,10 @@ verif/unit/sprite/*.hex
 verif/unit/sprite/*.vvp
 verif/unit/sprite/fb.txt
 verif/unit/sprite/runs.txt
+verif/unit/sprite/sprites.txt
+verif/unit/sprite/tb.vvp
+verif/unit/road/tb.vvp
+verif/unit/tilemap/tb.vvp
 verif/unit/road/*.hex
 verif/unit/road/*.vvp
 verif/unit/road/road.txt
