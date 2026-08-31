@@ -34,10 +34,12 @@ every convention below, and their git history shows what each decision cost.
 - Two 68000s: 25.174 MHz/4 (6.29 MHz) on Hang-On, 10 MHz on Space Harrier
   and Enduro Racer (`sharrier` config replaces the main CPU). Z80 at
   8 MHz/2. Screen 320x224.
-- Sound differs per game: Hang-On one YM2203 at 4 MHz; `enduror1` two
-  YM2203s plus 315-5218 PCM at 8 MHz; Space Harrier and the YM2151 Enduro
-  sets a YM2151 plus 315-5218, both SOUND_CLOCK/8. The PCM banking is the
-  older 512K style, a parameter our `sh_segapcm_5218.sv` already has.
+- Three sound boards (corrected 2026-08-30 against the driver): YM2203 at
+  4 MHz plus 315-5218 PCM at 8 MHz on `hangon`, `sharrier` and `enduror1`;
+  YM2151 at 4 MHz plus PCM at 4 MHz on the YM2151 Enduro sets and the
+  Super Hang-On conversions; two YM2203s plus PCM at 4 MHz only on the
+  `endurob2` bootleg. The PCM banking is the older 512K style, a
+  parameter our `sh_segapcm_5218.sv` already has.
 - Inputs through an ADC0804 (25.174 MHz/4/6) — carried from the X Board —
   and an i8255.
 - Space Harrier's i8751 (8 MHz, ROM 315-5163A, dumped, in MAME's set): its
