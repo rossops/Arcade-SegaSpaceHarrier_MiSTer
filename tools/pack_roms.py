@@ -138,6 +138,12 @@ def main():
                 with open(os.path.join(a.hexdir, f"tilerom{pl}.hex"), "w") as f:
                     for byt in t[pl * 0x8000:(pl + 1) * 0x8000]:
                         f.write(f"{byt:02x}\n")
+        if "road" in regions:
+            t = regions["road"]
+            for pl in range(2):
+                with open(os.path.join(a.hexdir, f"roadrom{pl}.hex"), "w") as f:
+                    for byt in t[pl * 0x4000:(pl + 1) * 0x4000]:
+                        f.write(f"{byt:02x}\n")
     print(f"{a.out}: {len(stream)} bytes ({len(stream)/1048576:.2f} MB)")
 
 

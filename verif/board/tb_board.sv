@@ -224,7 +224,8 @@ task automatic dump_ram(input string name, input integer words, input integer wh
         case (which)
             0: $fwrite(fd, "%c%c", core.tileram.mem[k][7:0], core.tileram.mem[k][15:8]);
             1: $fwrite(fd, "%c%c", core.textram.mem[k][7:0], core.textram.mem[k][15:8]);
-            default: $fwrite(fd, "%c%c", core.palette.mem[k][7:0], core.palette.mem[k][15:8]);
+            2: $fwrite(fd, "%c%c", core.palette.mem[k][7:0], core.palette.mem[k][15:8]);
+            default: $fwrite(fd, "%c%c", core.roadram.mem[k][7:0], core.roadram.mem[k][15:8]);
         endcase
     end
     $fclose(fd);
@@ -237,6 +238,7 @@ always @(posedge clk_sys) begin
         dump_ram("rtl_tileram.bin", 8192, 0);
         dump_ram("rtl_textram.bin", 2048, 1);
         dump_ram("rtl_paletteram.bin", 2048, 2);
+        dump_ram("rtl_roadram.bin", 2048, 3);
         fppi = $fopen("rtl_ppi.txt", "w");
         $fwrite(fppi, "%0d\n%0d\n%0d\n", core.pb0_out, core.pc0_out, core.display_enable);
         $fclose(fppi);

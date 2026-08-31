@@ -46,7 +46,9 @@ to 50.3496/100.6992 MHz with the fractional VCO multiplier. Added in M1:
 sh_tilemap_5012.sv` and `sh_tilerom.sv` (the 315-5011/5012 chain, built
 on the X Board's `xb_tilemap_5197` shape), `verif/models/tilemap_hangon.py`,
 the rebuilt `tools/mame_capture.*`, `model_check.py` and `board_check.py`,
-and `verif/unit/tilemap/`.
+and `verif/unit/tilemap/`. Added in M3: `rtl/video/sh_road.sv` and
+`sh_roadrom.sv` (the segaic16 road, HANGON/SHARRIER variant, from MAME's
+netlist emulation), `verif/models/road_hangon.py` and `verif/unit/road/`.
 
 ## Carried over from the X Board core
 | Path | What it is |

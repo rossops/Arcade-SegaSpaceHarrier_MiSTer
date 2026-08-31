@@ -499,6 +499,27 @@ palette) is pixel-exact against the model rendered from the RTL's own
 service mode (field found, set_value ineffective — the X Board had the
 same limitation), so test-mode screens wait for hardware.
 
+M3 findings (hangon). The road model — a per-pixel port of MAME's
+netlist emulation, HANGON semantics — composed with the tile chain
+turned model_check into a FULL-frame comparison: f900 matches MAME's
+screenshot on all 71,680 pixels, f60 at 99.78%, and every other
+capture's deficit is exactly its sprites (f300's 76% is the title
+screen behind the big HANG-ON logo sprite; its diff map spells the
+logo). The RTL renderer is pixel-exact against the model, PLYCONT
+included, on all six captures, and the board path with the road in the
+mixer is pixel-exact from its own dumps at frames 120 and 1500. The
+same RAM-cadence bug bit a third time before the gate caught it: phase
+B consumed ROM bytes one clock after the address registered, stale at
+every 8-pixel group boundary and invisible inside a group — the fix
+primes each pixel's fetch from the next-state values at the previous
+phase B, and the module comment now names the two-cycle cadence
+outright. The title screen's proper black backdrop comes from the
+road's background pass (the M2 palette-entry-0 base was a stand-in).
+The SHARRIER variant bit is implemented and untested until M7's
+captures; the road renders from live shared road RAM with no
+buffering, so the per-consumer dump question stays quiet only because
+the attract writes road RAM during vblank (open question 9 stands).
+
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and

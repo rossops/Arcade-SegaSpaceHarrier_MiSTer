@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Render the tile/text layers from the RTL's own +dumpframe RAM dumps and
-compare against the RTL's PPM of that frame, pixel for pixel. This checks
-the whole board path (CPU writes -> RAMs -> renderer -> mixer -> palette)
-for self-consistency; the model itself is checked against MAME by
-tools/model_check.py. Layers beyond the tilemap join as their milestones
-land (road M3, sprites M4); until then the mixer's base is palette entry 0.
+"""Render the tile, text and road layers from the RTL's own +dumpframe RAM
+dumps and compare against the RTL's PPM of that frame, pixel for pixel.
+This checks the whole board path (CPU writes -> RAMs -> renderers -> mixer
+-> palette) for self-consistency; the models themselves are checked
+against MAME by tools/model_check.py. Sprites join in M4.
 
     board_check.py verif/board/out <frame> [hangon]
 """
@@ -14,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "verif"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from romsets import ROMSETS
 from models import tilemap_hangon as tm
+from models import road_hangon as rd
 from models import palette5242 as pal
 
 ZIPDIR = "/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)"
@@ -37,7 +37,10 @@ def main(outdir, frame, setname="hangon"):
     fg = tm.render_layer(0, tileram, textram, planes, colscroll, rowscroll)
     bg = tm.render_layer(1, tileram, textram, planes, colscroll, rowscroll)
     tx = tm.render_text(textram, planes)
-    idx, mark = tm.mix(fg, bg, tx)
+    roadram = load_words(os.path.join(outdir, "rtl_roadram.bin"))
+    roadrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["road"][1][0][0]][0])
+    road, ply = rd.render(roadram, rd.decode(roadrom))
+    idx, mark = rd.mix(road, ply, fg, bg, tx)
     img = Image.open(os.path.join(outdir, f"frame_{frame:04d}.ppm")).convert("RGB")
     assert img.size == (320, 224), img.size
     match = 0

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render the tile layers from a MAME RAM dump with the Python model and
-compare against MAME's screenshot. Pixels where the model says a tile
-layer is opaque must match the PNG except where a sprite or the road
-covers them (higher-priority sprites legitimately draw over tiles; the
-raw match statistic is reported and the gate sets the threshold per
-capture). Writes model.png next to the dump for eyeballing.
+"""Render the tile, text and road layers from a MAME RAM dump with the
+Python models and compare the composed frame against MAME's screenshot.
+With the road in place the whole frame is compared; the remaining
+differences are sprites (M4), so the raw match statistic is reported and
+the gate sets the threshold per capture. Writes model.png next to the
+dump for eyeballing.
 
     model_check.py verif/golden/hangon/f60 [hangon]
 """
@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "verif"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from romsets import ROMSETS
 from models import tilemap_hangon as tm
+from models import road_hangon as rd
 from models import palette5242 as pal
 
 
@@ -41,23 +42,24 @@ def main(dumpdir, setname="hangon"):
     fg = tm.render_layer(0, tileram, textram, planes, colscroll, rowscroll)
     bg = tm.render_layer(1, tileram, textram, planes, colscroll, rowscroll)
     tx = tm.render_text(textram, planes)
-    idx, mark = tm.mix(fg, bg, tx)
+    roadram = load_words(os.path.join(dumpdir, "roadram.bin"))
+    roadrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["road"][1][0][0]][0])
+    road, ply = rd.render(roadram, rd.decode(roadrom))
+    idx, mark = rd.mix(road, ply, fg, bg, tx)
     img = Image.open(os.path.join(dumpdir, "frame.png")).convert("RGB")
     assert img.size == (320, 224), img.size
-    total = match = opaque = 0
+    total = match = 0
     out = Image.new("RGB", (320, 224))
     for y in range(224):
         for x in range(320):
             rgb = pal.entry_rgb(palram[idx[y][x]])
             out.putpixel((x, y), rgb)
-            if mark[y][x]:
-                opaque += 1
-                if img.getpixel((x, y)) == rgb:
-                    match += 1
+            if img.getpixel((x, y)) == rgb:
+                match += 1
             total += 1
     out.save(os.path.join(dumpdir, "model.png"))
-    pct = 100.0 * match / max(1, opaque)
-    print(f"tile-opaque pixels {opaque}/{total}; matching MAME PNG: {match} ({pct:.2f}%)")
+    pct = 100.0 * match / total
+    print(f"full frame: {match}/{total} matching MAME PNG ({pct:.2f}%)")
     print(f"scroll enables: col={colscroll} row={rowscroll}; portB={pb:02x} portC={pc:02x}")
     return pct
 

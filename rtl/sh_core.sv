@@ -431,7 +431,7 @@ sh_dpram #(.AW(13)) subram (.clk(clk_sys), .a_addr(shr_addr), .a_din(shr_din), .
     .b_clk(clk_sys), .b_addr(13'd0), .b_dout());
 sh_dpram #(.AW(11)) roadram (.clk(clk_sys), .a_addr(shr_addr[10:0]), .a_din(shr_din), .a_be(shr_be),
     .a_we(shr_we && shr_road && (shr_pick_m | shr_pick_s | shr_pick_u)), .a_dout(road_q),
-    .b_clk(clk_sys), .b_addr(11'd0), .b_dout());
+    .b_clk(clk_sys), .b_addr(rd_ram_addr), .b_dout(rd_ram_q));
 reg shr_road_d;
 wire [15:0] shr_q = shr_road_d ? road_q : subram_q;
 always @(posedge clk_sys) begin
@@ -516,16 +516,41 @@ sh_tilemap_5012 tilemap (
     .fg_pix(fg_pix), .bg_pix(bg_pix), .tx_pix(tx_pix)
 );
 
-// mixer, the M2 subset of segahang screen_update (road below the tile
-// layers and the sprites arrive in M3/M4): text over fg over bg over
-// palette entry 0. The per-pass priority marks join in M4.
+// road: ROM in BRAM from the loader, the netlist renderer on road RAM's
+// second port
+wire [13:0] rd_rom_addr;
+wire  [7:0] rd_p0, rd_p1;
+wire        road_brm = brm_wr && brm_addr >= OFF_ROAD && brm_addr < OFF_ZOOM;
+sh_roadrom roadrom (
+    .clk(clk_sys),
+    .wr(road_brm), .wr_addr(15'(brm_addr - OFF_ROAD)), .wr_data(brm_din),
+    .rd_addr(rd_rom_addr), .plane0(rd_p0), .plane1(rd_p1)
+);
+wire [10:0] rd_ram_addr; wire [15:0] rd_ram_q;
+wire [10:0] road_pix;
+wire  [1:0] road_ply;
+sh_road road (
+    .clk(clk_sys), .reset(reset), .sharrier(board_desc.sharrier_vid),
+    .line_start(line_start), .vcnt(vcnt), .ce_pix(ce_pix), .hcnt(hcnt),
+    .ram_addr(rd_ram_addr), .ram_q(rd_ram_q),
+    .rom_addr(rd_rom_addr), .rom_p0(rd_p0), .rom_p1(rd_p1),
+    .road_pix(road_pix), .road_ply(road_ply)
+);
+
+// mixer, the M3 subset of segahang screen_update (sprites arrive in M4):
+// a PLYCONT-0 line puts the road under the tile layers; any other value
+// paints the road over bg and fg (MAME's foreground pass rewrites every
+// pixel of the line) with only text above. The per-pass priority marks
+// join in M4.
 wire        tx_op = tx_pix[2:0] != 3'd0;
 wire        fg_op = fg_pix[2:0] != 3'd0;
 wire        bg_op = bg_pix[2:0] != 3'd0;
-wire  [9:0] mix_idx = tx_op ? {4'd0, tx_pix[5:0]} :
-                      fg_op ? fg_pix[9:0] :
-                      bg_op ? bg_pix[9:0] : 10'd0;
-wire [12:0] pal_b_addr = {3'b000, mix_idx};
+wire        road_under = (road_ply == 2'd0);
+wire [10:0] mix_idx = tx_op ? {5'd0, tx_pix[5:0]} :
+                      (road_under && fg_op) ? {1'b0, fg_pix[9:0]} :
+                      (road_under && bg_op) ? {1'b0, bg_pix[9:0]} :
+                      road_pix;
+wire [12:0] pal_b_addr = {2'b00, mix_idx};
 wire  [7:0] pal_r, pal_g, pal_b;
 
 wire pix_blank = hblank | vblank;
