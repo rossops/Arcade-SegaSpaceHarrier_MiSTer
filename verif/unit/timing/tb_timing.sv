@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // Smoke test: 400x262 raster, vblank irq is a one-line pulse at line 223,
 // latch pulse at 261, frame period = 400*262*8 clk_sys = 838400 clocks
-// (59.637 Hz at 50 MHz, matching MAME's 59.6368 Hz).
+// (60.05 Hz at the 50.3496 MHz clk_sys).
 module tb_timing;
 reg clk = 0; always #10 clk = ~clk;
 reg reset = 1;
@@ -37,7 +37,7 @@ initial begin
             end
             if (vbl_irq) begin
                 irq_lines = irq_lines + 1;
-                if (vcnt != 223) begin $display("FAIL vbl_irq at line %0d", vcnt); errors++; end
+                if (vcnt != 224) begin $display("FAIL vbl_irq at line %0d", vcnt); errors++; end
             end
         end
         if (latch_pulse) begin

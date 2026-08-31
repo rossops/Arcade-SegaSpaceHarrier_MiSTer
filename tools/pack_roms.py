@@ -17,13 +17,16 @@ from romsets import ROMSETS, SLOT, ORDER, DESC_SIZE
 def descriptor(rs):
     d = bytearray(DESC_SIZE)
     d[0] = rs["game_id"]
-    d[1] = (rs.get("deluxe", 0) & 1) | ((rs.get("link", 0) & 1) << 1) | ((rs.get("r360", 0) & 1) << 2)
-    d[2] = rs["yspr_banks"]
-    d[3] = rs["bspr_banks"]
+    d[1] = ((rs.get("sharrier", 0) & 1) |
+            ((rs.get("cpu10m", 0) & 1) << 1) |
+            ((rs.get("mcu", 0) & 1) << 2) |
+            ((rs.get("fd1089b", 0) & 1) << 3) |
+            ((rs.get("fd1094", 0) & 1) << 4) |
+            ((rs.get("ops_split", 0) & 1) << 5))
+    d[2] = rs["sound_board"]
+    d[3] = rs["spr_banks"]
     d[4] = rs["adc_reverse"]
-    d[5] = rs["pcm_bankmask"]
-    d[6] = rs["ana_mode"] & 7
-    d[7] = rs.get("irq2_line", 170)
+    d[5] = rs["ana_mode"] & 7
     return bytes(d)
 
 
@@ -64,17 +67,15 @@ def build_region(loader, roms):
             for j in range(len(even)):
                 out += bytes((odd[j], even[j]))
         return bytes(out)
-    if loader == "x64":
+    if loader == "x32":
         out = bytearray()
-        for i in range(0, len(roms), 8):
-            g = roms[i:i + 8]
-            assert len(g) == 8 and all(len(x) == len(g[0]) for x in g)
-            # MAME REGION64_BE: ROM k is byte k of the big-endian 64-bit word,
-            # ROM 0 most significant. Stored as four 16-bit words, word 0 =
-            # {ROM0, ROM1}, so the pens read out in order; each word is emitted
-            # low byte first like the w16 case.
-            for j in range(len(g[0])):
-                out += bytes((g[1][j], g[0][j], g[3][j], g[2][j], g[5][j], g[4][j], g[7][j], g[6][j]))
+        for i in range(0, len(roms), 4):
+            b0, b1, b2, b3 = roms[i:i + 4]
+            assert len(b0) == len(b1) == len(b2) == len(b3)
+            # MAME REGION32_LE: dword = b0 | b1<<8 | b2<<16 | b3<<24.
+            # Stream as LE words: (b0,b1) then (b2,b3).
+            for j in range(len(b0)):
+                out += bytes((b0[j], b1[j], b2[j], b3[j]))
         return bytes(out)
     raise ValueError(loader)
 
@@ -100,11 +101,10 @@ def build_stream(setname, zippath):
             data = build_region(loader, roms)
             if len(data) > SLOT[region]:
                 raise SystemExit(f"{region}: {len(data):#x} exceeds slot {SLOT[region]:#x}")
-            # MAME's PCM region is ROMREGION_ERASEFF: unpopulated ROM reads 0xFF.
-            # The last region is not padded (it is the 16 MB Y sprite slot).
-            fill = b"\xff" if region == "pcm" else b"\x00"
+            # segahang's regions are all zero-filled in MAME (no ERASEFF);
+            # the last region a set populates ships unpadded
             pad = 0 if idx == last else SLOT[region] - len(data)
-            regions[region] = data + fill * pad
+            regions[region] = data + b"\x00" * pad
     stream = descriptor(rs) + b"".join(regions[r] for r in ORDER[:last + 1])
     return stream, regions
 

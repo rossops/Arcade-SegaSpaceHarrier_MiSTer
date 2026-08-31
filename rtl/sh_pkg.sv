@@ -1,6 +1,6 @@
 //============================================================================
-//  Sega Y Board for MiSTer — shared package
-//  Board constants, SDRAM/DDR3 map, ioctl stream layout and the per-game
+//  Sega Space Harrier / Hang-On for MiSTer — shared package
+//  Board constants, SDRAM map, ioctl stream layout and the per-game
 //  descriptor that the MRA prepends to the ROM stream. docs/DESIGN.md ("ROM
 //  stream and descriptor") is the reference; tools/romsets.py holds the same
 //  slots and tools/pack_roms.py the same descriptor bytes.
@@ -8,73 +8,87 @@
 package sh_pkg;
 
     // ---- board clocks (Hz) -------------------------------------------------
-    localparam int PCB_MASTER_HZ = 50_000_000;   // 68000 x3 = /4, 315-5296 = /8, pixel = /8
-    localparam int PCB_SOUND_HZ  = 16_000_000;   // Z80 / YM2151 / 315-5218 = /4 (open question 3)
-    localparam int CLK_SYS_HZ    = 50_000_000;   // == PCB_MASTER_HZ (exact)
-    localparam int CLK_RAM_HZ    = 100_000_000;
+    // clk_sys is twice the PCB's 25.1748 MHz master, so pixel (/8), the
+    // Hang-On 68000s (/8) and the ADC (/48) are exact enables. The 10 MHz
+    // CPUs (sharrier/enduror/shangon*), the 4 MHz Z80/FM chips and the 8 MHz
+    // PCM tick come from fractional (accumulator) enables (DESIGN open q 5).
+    localparam int PCB_MASTER_HZ = 25_174_800;
+    localparam int PCB_CPU10_HZ  = 10_000_000;
+    localparam int PCB_SOUND_HZ  =  8_000_000;   // Z80 = /2, YM2203/YM2151 = /2, i8751 = /1
+    localparam int CLK_SYS_HZ    = 50_349_600;   // == 2 x PCB_MASTER_HZ (exact)
+    localparam int CLK_RAM_HZ    = 100_699_200;
 
-    // ---- video timing: 400 x 262 at clk_sys/8, 320 x 224 visible ----------
-    // MAME's 342 columns are a set_size placeholder (open question 1).
+    // ---- video timing: 400 x 262 at clk_sys/8 = 6.2937 MHz, 320 x 224 -----
+    // MAME 0.289 set_raw(25.1748 MHz/4, 400, 0, 320, 262, 0, 224) — measured,
+    // unlike the Y Board's set_size placeholder.
     localparam int H_TOTAL   = 400;
     localparam int H_ACTIVE  = 320;
     localparam int V_TOTAL   = 262;
     localparam int V_ACTIVE  = 224;
-    localparam int VBLANK_LINE = 223;   // IRQ4 asserted during this line
-    localparam int LATCH_LINE  = 261;   // sh_video_timing's end-of-frame pulse
-    localparam int IRQ2_LINE_DEFAULT = 170;   // 315-5306 timer IRQ, descriptor byte 7
+    localparam int VBLANK_LINE = 224;   // IRQ4 (vblank) asserted during this line
+    localparam int LATCH_LINE  = 261;   // end-of-frame pulse (bench framing; the
+                                        // HANGON tilemap latches nothing itself)
 
-    // ---- SDRAM byte map (25-bit byte address, 32 MB), contiguous slots ----
-    localparam [24:0] SDR_MAIN_BASE = 25'h000_0000;  // 512 KB slot, main 68000
-    localparam [24:0] SDR_SUBX_BASE = 25'h008_0000;  // 256 KB, sub X 68000
-    localparam [24:0] SDR_SUBY_BASE = 25'h00C_0000;  // 256 KB, sub Y 68000
-    localparam [24:0] SDR_Z80_BASE  = 25'h010_0000;  //  64 KB
-    localparam [24:0] SDR_PCM_BASE  = 25'h011_0000;  //   2 MB, 315-5218 samples
-    localparam [24:0] SDR_BSPR_BASE = 25'h031_0000;  //   2 MB, 16B sprite ROM (16-bit words)
-    localparam [24:0] SDR_YSPR_BASE = 25'h051_0000;  //  16 MB, Y sprite ROM (64-bit words as four 16-bit halves)
-    localparam [24:0] SDR_END       = 25'h151_0000;
+    // ---- SDRAM byte map (25-bit byte address), contiguous slots -----------
+    // Slots sized to the largest set. MAINOPS holds the decrypted-opcode
+    // image of the FD1089B and opcode-split bootleg sets; other sets leave it
+    // zero and fetch opcodes from SDR_MAIN_BASE (descriptor ops_split flag).
+    localparam [24:0] SDR_MAIN_BASE    = 25'h000_0000;  // 256 KB, main 68000
+    localparam [24:0] SDR_SUB_BASE     = 25'h004_0000;  // 256 KB, sub 68000 (also the main CPU's C00000 window)
+    localparam [24:0] SDR_Z80_BASE     = 25'h008_0000;  //  64 KB
+    localparam [24:0] SDR_PCM_BASE     = 25'h009_0000;  // 128 KB, 315-5218 samples
+    localparam [24:0] SDR_MAINOPS_BASE = 25'h00B_0000;  // 256 KB, main opcode image
+    localparam [24:0] SDR_SPR_BASE     = 25'h00F_0000;  //   1 MB, sprite ROM
+    localparam [24:0] SDR_END          = 25'h01F_0000;
 
     // ---- ioctl index-0 stream layout (byte offsets) -----------------------
-    // Every region is padded to its slot except the last one (Y sprites), so
-    // stream offset = SDRAM offset + OFF_MAIN and the loader is a plain copy.
-    localparam [26:0] OFF_DESC = 27'h000_0000;   // 64-byte descriptor
-    localparam [26:0] OFF_MAIN = 27'h000_0040;
-    localparam [26:0] OFF_SUBX = OFF_MAIN + 27'h08_0000;
-    localparam [26:0] OFF_SUBY = OFF_SUBX + 27'h04_0000;
-    localparam [26:0] OFF_Z80  = OFF_SUBY + 27'h04_0000;
-    localparam [26:0] OFF_PCM  = OFF_Z80  + 27'h01_0000;
-    localparam [26:0] OFF_BSPR = OFF_PCM  + 27'h20_0000;
-    localparam [26:0] OFF_YSPR = OFF_BSPR + 27'h20_0000;
-    localparam [26:0] OFF_END  = OFF_YSPR + 27'h100_0000;
-
-    // ---- DDR3: two 512x512x16 Y sprite framebuffers, 512 KB each ----------
-    localparam [28:0] DDR_FB0_BASE = 29'h0600_0000;  // 0x3000_0000 >> 3, in 64-bit units
-    localparam [28:0] DDR_FB1_BASE = 29'h0601_0000;  // 0x3008_0000 >> 3
+    // The SDRAM regions come first in slot order (stream offset = SDRAM
+    // offset + OFF_MAIN, a plain copy), then the loader-filled BRAM regions:
+    // tile ROM, road ROM, zoom PROM, i8751 ROM, FD1089B key. Every region is
+    // padded to its slot except the last one a set populates.
+    localparam [26:0] OFF_DESC    = 27'h000_0000;   // 64-byte descriptor
+    localparam [26:0] OFF_MAIN    = 27'h000_0040;
+    localparam [26:0] OFF_SUB     = OFF_MAIN    + 27'h04_0000;
+    localparam [26:0] OFF_Z80     = OFF_SUB     + 27'h04_0000;
+    localparam [26:0] OFF_PCM     = OFF_Z80     + 27'h01_0000;
+    localparam [26:0] OFF_MAINOPS = OFF_PCM     + 27'h02_0000;
+    localparam [26:0] OFF_SPR     = OFF_MAINOPS + 27'h04_0000;
+    localparam [26:0] OFF_TILE    = OFF_SPR     + 27'h10_0000;
+    localparam [26:0] OFF_ROAD    = OFF_TILE    + 27'h01_8000;
+    localparam [26:0] OFF_ZOOM    = OFF_ROAD    + 27'h00_8000;
+    localparam [26:0] OFF_MCU     = OFF_ZOOM    + 27'h00_2000;
+    localparam [26:0] OFF_KEY     = OFF_MCU     + 27'h00_1000;
+    localparam [26:0] OFF_END     = OFF_KEY     + 27'h00_2000;
 
     // ---- per-game descriptor (first 64 bytes of the stream) ----------------
-    //  byte 0: game id (0 gforce2, 1 pdrift, 2 gloc, 3 rchase, 4 strkfgtr,
-    //          5 glocr360, 6 pdriftl)
-    //  byte 1: flags: bit0 deluxe cabinet (motor board stub on port C / ADC)
-    //                 bit1 link board present (pdriftl)
-    //                 bit2 R360 (cabinet pitch and roll on ADC 0 and 2)
-    //  byte 2: Y sprite ROM bank count, 512 KB banks (bank % count wrap)
-    //  byte 3: 16B sprite ROM bank count, 128 KB banks
-    //  byte 4: ADC reverse mask (bit n: MAME channel n reads 0x100 - value, PORT_REVERSE)
-    //  byte 5: 315-5218 bank mask (0xF8 on every set)
-    //  byte 6: bits 2:0 analog mode (0 gforce2, 1 flight gloc/strkfgtr,
-    //          2 driving pdrift, 3 guns rchase, 4 R360)
-    //  byte 7: IRQ2 scanline (170 unless tuned)
-    //  bytes 8..63: reserved (0)
+    //  byte 0: game id (0 hangon, 1 sharrier, 2 enduror, 3 shangon conversion)
+    //  byte 1: flags: bit0 sharrier map+video (memory map, sprite/road/mixer
+    //                      variants, 2-bank palette; 0 = hangon versions)
+    //                 bit1 CPUs at 10 MHz (0 = 25.1748/4)
+    //                 bit2 i8751 present (sharrier)
+    //                 bit3 FD1089B on the main CPU (enduror)
+    //                 bit4 FD1094 on the sub CPU (shangonro/ho, M9)
+    //                 bit5 fetch main opcodes from the MAINOPS slot
+    //  byte 2: sound board: 0 YM2203 + PCM at 8 MHz; 1 YM2151 + PCM at 4 MHz;
+    //          2 = 2x YM2203 + PCM at 4 MHz (endurob2)
+    //  byte 3: sprite ROM bank count (64 KB banks on hangon-style sets,
+    //          128 KB on sharrier-style; bank % count wrap)
+    //  byte 4: ADC reverse mask (bit n: channel n reads 0x100 - value)
+    //  byte 5: bits 2:0 analog mode (0 hangon driving, 1 sharrier stick,
+    //          2 enduror bike)
+    //  bytes 6..63: reserved (0)
     typedef struct packed {
         logic [7:0] game_id;
-        logic       deluxe;
-        logic       link;
-        logic       r360;
-        logic [7:0] yspr_banks;
-        logic [7:0] bspr_banks;
+        logic       sharrier_vid;
+        logic       cpu10m;
+        logic       has_mcu;
+        logic       fd1089b;
+        logic       fd1094;
+        logic       ops_split;
+        logic [1:0] sound_board;
+        logic [7:0] spr_banks;
         logic [7:0] adc_reverse;
-        logic [7:0] pcm_bankmask;
         logic [2:0] ana_mode;
-        logic [7:0] irq2_line;
     } board_desc_t;
 
 endpackage

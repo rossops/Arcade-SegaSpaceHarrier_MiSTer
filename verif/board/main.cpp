@@ -1,4 +1,5 @@
-// Verilator driver: 50 MHz clk_sys and 100 MHz clk_ram, phase-aligned.
+// Verilator driver: clk_sys and clk_ram at a 1:2 ratio, phase-aligned (the
+// bench measures in clocks; the real rates are 50.3496 / 100.6992 MHz).
 #include "Vtb_board.h"
 #include "verilated.h"
 #include <cstdio>

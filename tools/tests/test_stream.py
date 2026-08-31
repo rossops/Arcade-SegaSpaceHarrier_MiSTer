@@ -97,22 +97,21 @@ def test_w16_word_order():
     assert int.from_bytes(out, "little") == 0x1234
 
 
-def test_x64_word_order():
-    # MAME's 64-bit big-endian word (ROM 0 most significant, 16 pens MSB
-    # first) becomes four SDRAM words read in order: word 0 = {ROM0, ROM1}.
-    # The Y sprite renderer relies on that to walk the pens left to right.
-    out = pack_roms.build_region("x64", [bytes([k + 1]) for k in range(8)])
-    assert out == bytes([2, 1, 4, 3, 6, 5, 8, 7])
-    words = [int.from_bytes(out[i:i + 2], "little") for i in range(0, 8, 2)]
-    assert words == [0x0102, 0x0304, 0x0506, 0x0708]
+def test_x32_word_order():
+    # MAME REGION32_LE (the sharrier sprite ROMs): ROM k is byte k of the
+    # little-endian dword; the two SDRAM words hold (b0,b1) then (b2,b3),
+    # so the renderer reads the dword back as MAME does.
+    out = pack_roms.build_region("x32", [bytes([k + 1]) for k in range(4)])
+    assert out == bytes([1, 2, 3, 4])
+    assert int.from_bytes(out, "little") == 0x04030201
 
 
-def test_pcm_mirrors_reach_every_bank():
-    # gforce2's two 128 KB PCM ROMs are ROM_RELOADed to fill their 512 KB
-    # banks (region populated to 0x180000); the 315-5218 bank mask F8 lets
-    # the sample table point into any mirror, so the stream must carry them.
-    rs = romsets.ROMSETS["gforce2"]
-    files = [pack_roms.file_fields(f) for f in rs["regions"]["pcm"][1]]
-    assert sum(s * rep for _, s, _, rep in files) == 0x180000
-    parts = gen_mra.region_parts("flat", rs["regions"]["pcm"][1], romsets.SLOT["pcm"], "FF")
-    assert sum(1 for p in parts if "epr-11516.106" in p) == 4
+def test_empty_middle_region_pads_to_slot():
+    # hangon has no mainops image; the region between pcm and sprite must
+    # still occupy its whole slot so the sprite ROM lands at its offset
+    rs = romsets.ROMSETS["hangon"]
+    assert "mainops" not in rs["regions"]
+    last = pack_roms.last_region(rs)
+    assert romsets.ORDER[last] == "zoom"   # no mcu/key either; stream ends there
+    parts = gen_mra.region_parts("flat", [], romsets.SLOT["mainops"], "00")
+    assert parts == [f'      <part repeat="{romsets.SLOT["mainops"]}">00</part>']

@@ -8,7 +8,7 @@
 //  Mix: MAME routes the Y Board's PCM at 0.70 and its YM2151 at 0.30 of
 //  full scale (the X Board's were 0.35 and 0.15); the gains are parameters
 //  in 1/256.
-//  Simulation builds (no VHDL) use the tv80 core behind YB_Z80_TV80.
+//  Simulation builds (no VHDL) use the tv80 core behind SH_Z80_TV80.
 //============================================================================
 import sh_pkg::*;
 
@@ -50,7 +50,7 @@ wire        ym_irq_n;
 wire        z_wait_n;
 wire        z_rst_n = ~reset & z80_reset_n;
 
-`ifdef YB_Z80_TV80
+`ifdef SH_Z80_TV80
 // tv80 has no clock enable: derive a 4 MHz clock from the 8 MHz enable
 reg zclk;
 always @(posedge clk) if (reset) zclk <= 1'b0; else if (ce_z80x2) zclk <= ~zclk;

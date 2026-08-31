@@ -26,7 +26,13 @@ import sh_pkg::*;
 reg [15:0] mem [0:(1<<24)-1];   // 16M words
 
 task automatic load(input string f, input [24:0] base);
-    $readmemh(f, mem, base >> 1);
+    integer fd;
+    // a set only ships the regions it populates (e.g. no mainops on hangon)
+    fd = $fopen(f, "r");
+    if (fd != 0) begin
+        $fclose(fd);
+        $readmemh(f, mem, base >> 1);
+    end
 endtask
 
 string hexdir;
@@ -34,12 +40,11 @@ initial begin
     ready = 1'b0;
     if (!$value$plusargs("hexdir=%s", hexdir)) hexdir = HEXDIR;
     load({hexdir, "/main.hex"},    SDR_MAIN_BASE);
-    load({hexdir, "/subx.hex"},    SDR_SUBX_BASE);
-    load({hexdir, "/suby.hex"},    SDR_SUBY_BASE);
+    load({hexdir, "/sub.hex"},     SDR_SUB_BASE);
     load({hexdir, "/z80.hex"},     SDR_Z80_BASE);
     load({hexdir, "/pcm.hex"},     SDR_PCM_BASE);
-    load({hexdir, "/bsprite.hex"}, SDR_BSPR_BASE);
-    load({hexdir, "/ysprite.hex"}, SDR_YSPR_BASE);
+    load({hexdir, "/mainops.hex"}, SDR_MAINOPS_BASE);
+    load({hexdir, "/sprite.hex"},  SDR_SPR_BASE);
 end
 
 function automatic [63:0] rd4(input [24:3] a);

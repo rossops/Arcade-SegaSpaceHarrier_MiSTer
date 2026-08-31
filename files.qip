@@ -1,30 +1,23 @@
-# Sega Y Board — project file list. Add files here, never in the Quartus IDE.
+# Sega Space Harrier / Hang-On — project file list. Add files here, never in
+# the Quartus IDE.
 set_global_assignment -name QIP_FILE sys/sys.qip
 set_global_assignment -name SDC_FILE Arcade-SegaSpaceHarrier.sdc
 
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-SegaSpaceHarrier.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sh_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sh_core.sv
-set_global_assignment -name MIF_FILE       rtl/video/sh_shifter.hex
 set_global_assignment -name SEARCH_PATH    rtl/video
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_video_timing.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_fb_if.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_palette_5242.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_ysprite_5305.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_rotate_5306.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_bsprite_5196.sv
-# Y Board video still to write: 315-5305 sprite generator + 315-5306 rotation, the
-# 16B sprite layer, the mixer. There is no tilemap and no road on this board.
+# Board video still to write: 315-5011/5012 tilemap (M2), road (M3), the
+# HANGON/SHARRIER sprite generators and the mixer (M4/M7).
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_m68k_bus.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_rom_cache.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_math_5248.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_math_5249.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_ana_shape.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_315_5296.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_msm6253.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_adc0804.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_rom_loader.sv

@@ -45,19 +45,18 @@ def region_parts(loader, files, slot, fill="00", pad_to_slot=True):
             lines.append(f'        <part name="{o}" crc="{oc}" map="01"/>')
             lines.append('      </interleave>')
             total += 2 * s
-    elif loader == "x64":
-        for i in range(0, len(files), 8):
-            grp = files[i:i + 8]
-            lines.append('      <interleave output="64">')
-            # ROM k is byte k of MAME's big-endian 64-bit word; stored as four
-            # little-endian 16-bit words with ROM 0 in the high byte of word 0,
-            # so ROM k lands in output byte k ^ 1 (pack_roms.build_region).
+    elif loader == "x32":
+        for i in range(0, len(files), 4):
+            grp = files[i:i + 4]
+            lines.append('      <interleave output="32">')
+            # MAME REGION32_LE: ROM k is byte k of the little-endian dword
+            # (pack_roms.build_region), so ROM k is map digit k from the right
             for k, (n, s, c, _) in enumerate(grp):
-                m = ["0"] * 8
-                m[7 - (k ^ 1)] = "1"
+                m = ["0"] * 4
+                m[3 - k] = "1"
                 lines.append(f'        <part name="{n}" crc="{c}" map="{"".join(m)}"/>')
             lines.append('      </interleave>')
-            total += 8 * grp[0][1]
+            total += 4 * grp[0][1]
     else:
         raise ValueError(loader)
     pad = slot - total
@@ -77,7 +76,7 @@ def make_mra(key, rs):
     L.append(f'  <mameversion>0289</mameversion>')
     L.append(f'  <year>{rs["year"]}</year>')
     L.append('  <manufacturer>Sega</manufacturer>')
-    L.append(f'  <category>{rs.get("category", "Shooter / Flight")}</category>')
+    L.append(f'  <category>{rs.get("category", "Racing / Driving")}</category>')
     zips = rs["zipfile"] + ".zip" if rs["zipfile"] == key else "|".join(
         f"{z}.zip" for z in [key] + rs.get("extra_zips", []) + [rs["zipfile"]])
     L.append(f'  <rom index="0" zip="{zips}" md5="None">')
@@ -86,11 +85,11 @@ def make_mra(key, rs):
     for idx, region in enumerate(ORDER[:last + 1]):
         loader, files = rs["regions"].get(region, ("flat", []))
         L.append(f'    <!-- {region} -->')
-        # the last region (the 16 MB Y sprite slot) ships unpadded
-        L += region_parts(loader, files, SLOT[region], "FF" if region == "pcm" else "00", idx != last)
+        # zero fill everywhere (no ERASEFF regions in segahang); the last
+        # region a set populates ships unpadded
+        L += region_parts(loader, files, SLOT[region], "00", idx != last)
     L.append('  </rom>')
-    # sub X backup RAM (16 KB) saved as NVRAM index 3
-    L.append('  <nvram index="3" size="16384"/>')
+    # no battery RAM on this board, so no <nvram> element
     # DIP switches: raw port values (1 = off). Defaults are MAME's.
     L.append(f'  <switches default="{rs["dip_default"]}" base="0">')
     for lo, hi, name, ids in rs["dips"]:

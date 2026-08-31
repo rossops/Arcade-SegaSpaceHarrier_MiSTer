@@ -424,7 +424,7 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M | Scope | Pass criterion |
 | --- | --- | --- |
 | M0 | Trim: `sh_pkg` from section 3, emu top to an `sh_core` stub on the 6.2937 MHz timing, delete math/fb_if, `romsets.py` with `hangon`, `x32` loader, descriptor, MRA, `check_m0.sh` | lint + `tools/tests` green with the hangon zip; stub fits with slack; M10K baseline recorded |
-| M1 | Two 68000s + caches, shared sub/road RAM with the RMW-hold arbiter, both PPIs (mode 1 latch handshake), ADC0804, inputs, IRQ4, display enable, Z80 stub | cocotb: i8255 and ADC exact vs models, sampled at the CPU latch point; both PC traces track MAME (hangon, 120 frames, parent thresholds); IRQ4 on the same frame/line |
+| M1 | Two 68000s + caches, shared sub/road RAM with the RMW-hold arbiter (interface shaped for the i8751 as a third master from the start), both PPIs (mode 1 latch handshake), ADC0804, inputs, IRQ4, display enable, Z80 stub. Side study, before any MCU RTL exists: disassemble the 315-5163A ROM and trace it under MAME to settle the 40385 handshake and the IPL protocol (open question 2) | cocotb: i8255 and ADC exact vs models, sampled at the CPU latch point; both PC traces track MAME (hangon, 120 frames, parent thresholds); IRQ4 on the same frame/line; a written-up 8751 contract in this doc |
 | M2 | Tilemaps and text (315-5011/5012), palette, `board_check`/`frame_check` rebuilt | model exact on captured VRAM; RTL exact per layer on the same dumps; board tile/text frame exact from the RTL's own dumps |
 | M3 | Road, HANGON variant | model exact on captured road RAM for attract frames; board frame exact with road + tiles |
 | M4 | Hang-On sprites + mixer + 3-bank palette effects | full frames pixel-exact vs MAME (hangon) at three capture frames, `--step-ok` residual rules |
@@ -433,6 +433,22 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M7 | Space Harrier: sharrier map + 10 MHz enables, SHARRIER sprites (x32 fetch), road/mixer/palette variants, MCS-51 + bridge (the game's only main-CPU interrupt source) | sharrier boots through the MCU in the bench; frames vs MAME; plays on hardware |
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
+
+M0 findings (2026-08-31). The gate is green end to end: lint, emu
+elaboration, the timing smoke test (262 lines, one vbl_irq line at 224),
+the three carried chip tests retuned where the board differs (the
+315-5218 test now runs BANK_512 — shift 12, mask 0x70 — and the new
+0x090000 PCM base), the board bench building and running the gradient
+stub, and the stream tools byte-identical between packer and MRA against
+the real hangon.zip (stream 2.07 MB). The first Quartus fit: the
+fractional-VCO PLL delivered exactly 50.3496 / 100.6992 MHz (fit.rpt
+shows the requested frequencies verbatim), every STA category positive
+(worst emu setup slack 2.629 ns on clk_ram, worst hold 0.248 ns), and
+the M10K baseline is 69 of 553 blocks / 7,386 ALMs — the framework plus
+SDRAM, loader and the stub, before any board RTL. One bench bug worth
+remembering: the PPM writer lost pixel (0,0) of every frame because the
+file opened on a nonblocking flag in the same clock the pixel arrived;
+the parents' core pipeline latency had always hidden it.
 
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
@@ -446,6 +462,8 @@ on the Mac, Quartus on the Windows box, hardware by the user.
    40385 handshake (who writes what, when) before deciding whether the
    suppression is needed at all, rather than blind-copying it. Also
    unknown: whether the real bridge steals cycles or waits for bus grant.
+   This study runs alongside M1 (disassemble the ROM, MAME traces), not
+   inside M7 — the arbiter is designed then, and its answer shapes it.
 3. Which MCS-51 core to vendor (jtframe's mcs51 vs other open cores) and
    its licence fit with the GPL-3 core.
 4. jt03 integration: MAME routes the YM2203's four outputs at

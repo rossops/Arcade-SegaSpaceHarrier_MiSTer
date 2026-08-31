@@ -17,12 +17,12 @@ import sh_pkg::*;
 
 module sh_segapcm_5218 #(
     parameter [24:0] PCM_BASE  = SDR_PCM_BASE,
-    parameter        BANKSHIFT = 13            // MAME m_bankshift (Y Board 13, X Board 12)
+    parameter        BANKSHIFT = 12            // MAME m_bankshift (BANK_512: every segahang set)
 ) (
     input             clk,          // clk_sys
     input             reset,
     input             tick,         // one pulse per 128 chip clocks (31.25 kHz)
-    input       [7:0] bankmask,     // descriptor: 0xF8 on the Y Board
+    input       [7:0] bankmask,     // 0x70 (BANK_512, bank bits 6:4) on every set here
 
     // Z80 register access (F000-F0FF)
     input             cs,
