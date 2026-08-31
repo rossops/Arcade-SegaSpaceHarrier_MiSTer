@@ -209,6 +209,41 @@ function automatic pressed(input integer at);
 endfunction
 wire p1_start = pressed(start_frame) || pressed(start2_frame) || pressed(start3_frame) || pressed(start4_frame) || pressed(start5_frame);
 
+// ---- +dumpframe=N: dump the video RAMs as frame N's last visible line
+// ends (the state MAME's frame-end draw would see) plus the PPI video
+// bits, for tools/board_check.py to render the model from and compare
+// frame N's PPM. Per-consumer timing refines per milestone as the
+// consumers arrive (the tilemap reads its registers per line; a static
+// frame makes end-of-frame equivalent).
+integer dumpframe = -1;
+initial begin if (!$value$plusargs("dumpframe=%d", dumpframe)) dumpframe = -1; end
+task automatic dump_ram(input string name, input integer words, input integer which);
+    integer fd, k;
+    fd = $fopen(name, "wb");
+    for (k = 0; k < words; k = k + 1) begin
+        case (which)
+            0: $fwrite(fd, "%c%c", core.tileram.mem[k][7:0], core.tileram.mem[k][15:8]);
+            1: $fwrite(fd, "%c%c", core.textram.mem[k][7:0], core.textram.mem[k][15:8]);
+            default: $fwrite(fd, "%c%c", core.palette.mem[k][7:0], core.palette.mem[k][15:8]);
+        endcase
+    end
+    $fclose(fd);
+endtask
+reg vb_dump_d;
+integer fppi;
+always @(posedge clk_sys) begin
+    vb_dump_d <= vb;
+    if (dumpframe >= 0 && frame == dumpframe && vb && !vb_dump_d) begin
+        dump_ram("rtl_tileram.bin", 8192, 0);
+        dump_ram("rtl_textram.bin", 2048, 1);
+        dump_ram("rtl_paletteram.bin", 2048, 2);
+        fppi = $fopen("rtl_ppi.txt", "w");
+        $fwrite(fppi, "%0d\n%0d\n%0d\n", core.pb0_out, core.pc0_out, core.display_enable);
+        $fclose(fppi);
+        $display("dumped the video RAMs at the end of frame %0d", frame);
+    end
+end
+
 // ---- audio: 48 kHz stereo, raw little-endian 16-bit (audio.raw)
 integer faud;
 reg [15:0] aud_acc;      // 48000/50.3496e6 -> 16-bit phase acc: 65536*0.000953 = 62.5

@@ -17,7 +17,7 @@ timing. `docs/DESIGN.md` has the plan and the open questions;
 | --- | --- | --- |
 | M0 | Skeleton compiles, MRA/stream tools agree with MAME CRCs | done (2026-08-31) |
 | M1 | Two 68000s, shared RAM, PPIs, ADC, interrupts track MAME | done (2026-08-31) |
-| M2 | Tilemaps and text layer pixel-exact | not started |
+| M2 | Tilemaps and text layer pixel-exact | done (2026-08-31) |
 | M3 | Road generator pixel-exact | not started |
 | M4 | Hang-On sprites and mixer: full frames vs MAME | not started |
 | M5 | YM2203 + PCM sound vs MAME recordings | not started |

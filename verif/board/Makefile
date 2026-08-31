@@ -4,6 +4,7 @@ SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
   rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv rtl/cpu/sh_m68k_bus.sv \
   rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
   rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys.sv rtl/video/sh_palette_5242.sv \
+  rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv
 VFLAGS := -Wno-fatal -Wno-lint -Wno-style -Werror-PINMISSING -Wno-BLKANDNBLK -Wno-MULTIDRIVEN -Wno-UNOPTFLAT \
   -DSIMULATION -DSH_Z80_TV80 --timing -O2 --x-assign fast --x-initial fast \
@@ -26,8 +27,9 @@ build: obj_dir/Vtb_board
 run: obj_dir/Vtb_board
 	mkdir -p out/verif && rm -f out/frame_*.ppm && ln -sfn $(ROOT)/verif/golden out/verif/golden; \
 	ln -sf $(ROOT)/rtl/cpu/fx68k/microrom.mem out/microrom.mem; ln -sf $(ROOT)/rtl/cpu/fx68k/nanorom.mem out/nanorom.mem; \
+	for p in 0 1 2; do ln -sf $(ROOT)/verif/golden/$(GAME)/tilerom$$p.hex out/tilerom$$p.hex; done; \
 	sh $(ROOT)/tools/keepalive.sh $(ROOT) & KA=$$!; \
-	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) $(PLUSARGS)); RC=$$?; \
+	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) +tilerom $(PLUSARGS)); RC=$$?; \
 	kill $$KA 2>/dev/null; wait $$KA 2>/dev/null; exit $$RC
 
 clean:

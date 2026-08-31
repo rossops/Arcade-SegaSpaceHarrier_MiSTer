@@ -130,6 +130,14 @@ def main():
         os.makedirs(a.hexdir, exist_ok=True)
         for r, d in regions.items():
             write_hex(os.path.join(a.hexdir, f"{r}.hex"), d)
+        # per-plane byte hexes of the tile ROM for the simulators' BRAM
+        # (sh_tilerom +tilerom; the hardware path loads it over ioctl)
+        if "tile" in regions:
+            t = regions["tile"]
+            for pl in range(3):
+                with open(os.path.join(a.hexdir, f"tilerom{pl}.hex"), "w") as f:
+                    for byt in t[pl * 0x8000:(pl + 1) * 0x8000]:
+                        f.write(f"{byt:02x}\n")
     print(f"{a.out}: {len(stream)} bytes ({len(stream)/1048576:.2f} MB)")
 
 

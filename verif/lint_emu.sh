@@ -14,7 +14,7 @@ verilator --lint-only -DSIMULATION --top-module emu -DSH_Z80_TV80 -Isys -Irtl/vi
   rtl/mem/sh_rom_loader.sv rtl/mem/sh_dpram.sv \
   rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv \
   rtl/cpu/sh_m68k_bus.sv rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
-  rtl/video/sh_palette_5242.sv rtl/sh_core.sv rtl/pll.v \
+  rtl/video/sh_palette_5242.sv rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv rtl/sh_core.sv rtl/pll.v \
   sys/hps_io.sv sys/arcade_video.v sys/video_freak.sv sys/scandoubler.v \
   sys/scanlines.v sys/gamma_corr.sv sys/video_cleaner.sv sys/video_mixer.sv \
   sys/hq2x.sv sys/math.sv sys/sys_top.v \

@@ -41,7 +41,12 @@ the Power Drift shifter overlay. Dropped in M0 (not on this board, see
 docs/DESIGN.md): the 315-5248/5249 math chips and their models/tests,
 `sh_fb_if.sv` and the bench's DDR3 model (both sprite generators here are
 line-based). Added in M0: `rtl/pll.v`/`pll.qip`, the Y Board's PLL retuned
-to 50.3496/100.6992 MHz with the fractional VCO multiplier.
+to 50.3496/100.6992 MHz with the fractional VCO multiplier. Added in M1:
+`rtl/io/sh_i8255.sv` and its model/test. Added in M2: `rtl/video/
+sh_tilemap_5012.sv` and `sh_tilerom.sv` (the 315-5011/5012 chain, built
+on the X Board's `xb_tilemap_5197` shape), `verif/models/tilemap_hangon.py`,
+the rebuilt `tools/mame_capture.*`, `model_check.py` and `board_check.py`,
+and `verif/unit/tilemap/`.
 
 ## Carried over from the X Board core
 | Path | What it is |

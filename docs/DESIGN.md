@@ -473,6 +473,32 @@ question 2): the bridge must be a full main-bus master, IRQ4 once per
 vblank is the whole IPL story, and the 40385 suppression is a MAME
 reset-ordering patch the RTL should not copy.
 
+M2 findings (hangon). The Python model (verif/models/tilemap_hangon.py,
+a per-pixel port of tilemap_16a_draw_layer) matched MAME's screenshots
+on every tile-opaque pixel of six captures on the first run — including
+f900's 17,558-pixel scores screen and the scrolling f1500 — the only
+sub-100% capture being in-game f2400 (87.6%), whose diff map is exactly
+the bike and roadside sprites covering background tiles. The RTL
+renderer (built on the X Board's line-renderer shape) is pixel-exact
+against the model on all six captures and on a synthetic run with row
+and column scroll asserted; no hangon capture ever enables those (PPI
+port C bits 2:1 stay high even in-game), so the synthetic run is their
+only coverage. Two bugs found on the way, both worth remembering: the
+scroll-register capture read the text RAM one cycle early — everything
+landed one register late (xscroll got the page-select word) — and four
+captures still passed because their fg/bg layers are entirely
+transparent (title and scores screens are text-only); only scroll-heavy
+captures exposed it. And the board bench rendered a solid palette-
+entry-0 screen because nothing loaded the tile ROM BRAM — the bench
+bypasses the ioctl loader, so pack_roms now emits per-plane tilerom
+hexes and the bench passes +tilerom. Hang-On's title logo turns out to
+be sprites, not tiles, which is why the tile layers are so sparse
+before M4. The board path (CPU writes -> RAMs -> renderer -> mixer ->
+palette) is pixel-exact against the model rendered from the RTL's own
++dumpframe dumps at frame 120. MAME's Lua cannot engage hangon's
+service mode (field found, set_value ineffective — the X Board had the
+same limitation), so test-mode screens wait for hardware.
+
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and

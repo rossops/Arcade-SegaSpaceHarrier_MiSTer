@@ -220,16 +220,21 @@ sh_dpram #(.AW(13)) work_ram (.clk(clk_sys), .a_addr(ma[13:1]), .a_din(m_dout), 
     .b_clk(clk_sys), .b_addr(13'd0), .b_dout());
 sh_dpram #(.AW(13)) tileram (.clk(clk_sys), .a_addr(ma[13:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_tile && m_start), .a_dout(tile_q),
-    .b_clk(clk_sys), .b_addr(13'd0), .b_dout());
+    .b_clk(clk_sys), .b_addr(tm_tile_addr), .b_dout(tm_tile_q));
 sh_dpram #(.AW(11)) textram (.clk(clk_sys), .a_addr(ma[11:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_text && m_start), .a_dout(text_q),
-    .b_clk(clk_sys), .b_addr(11'd0), .b_dout());
+    .b_clk(clk_sys), .b_addr(tm_text_addr), .b_dout(tm_text_q));
 sh_dpram #(.AW(10)) spriteram (.clk(clk_sys), .a_addr(ma[10:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_spr && m_start), .a_dout(spr_q),
     .b_clk(clk_sys), .b_addr(10'd0), .b_dout());
-sh_dpram #(.AW(11)) paletteram (.clk(clk_sys), .a_addr(ma[11:1]), .a_din(m_dout), .a_be(m_be),
+// 2048 words of the 315-5242-style palette + resistor DAC (the hangon
+// shadow/hilight banks arrive with the sprites in M4; effects idle)
+sh_palette_5242 palette (
+    .clk(clk_sys),
+    .a_addr({2'b00, ma[11:1]}), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_pal && m_start), .a_dout(pal_q),
-    .b_clk(clk_sys), .b_addr(11'd0), .b_dout());
+    .b_addr(pal_b_addr), .b_effects(1'b0), .r(pal_r), .g(pal_g), .b(pal_b)
+);
 
 // ---- PPI0 (E00000): port A = sound latch (mode 1 strobed output, /OBF is
 // the Z80's NMI), port B = video/lamps, port C = handshake + tilemap
@@ -483,11 +488,49 @@ always @* begin
     else                   begin s_din = 16'hFFFF;   s_ack = s_ram_rdy; end
 end
 
-// ================================================================ video (M0 stub)
-// Gradient gated by the display enable (PPI0 port B bit 4); the tilemap,
-// road, sprite and mixer chain replaces this in M2-M4.
-assign r = display_enable ? ({hcnt[7:0]} & {8{~hblank & ~vblank}}) : 8'd0;
-assign g = 8'd0;
-assign b = display_enable ? ({vcnt[7:0]} & {8{~hblank & ~vblank}}) : 8'd0;
+// ================================================================ video (M2)
+// Tile ROM in BRAM, filled from the loader's brm stream port
+wire [14:0] tm_rom_addr;
+wire  [7:0] tm_p0, tm_p1, tm_p2;
+wire        tile_brm = brm_wr && brm_addr >= OFF_TILE && brm_addr < OFF_ROAD;
+sh_tilerom tilerom (
+    .clk(clk_sys),
+    .wr(tile_brm), .wr_addr(17'(brm_addr - OFF_TILE)), .wr_data(brm_din),
+    .rd_addr(tm_rom_addr), .plane0(tm_p0), .plane1(tm_p1), .plane2(tm_p2)
+);
+
+// 315-5011/5012 tilemap: fg, bg and text line renderers. The display side
+// reads one pixel ahead so the palette's registered output lands exactly on
+// the framework's ce_pix sample of that pixel.
+wire [12:0] tm_tile_addr; wire [15:0] tm_tile_q;
+wire [10:0] tm_text_addr; wire [15:0] tm_text_q;
+wire [10:0] fg_pix, bg_pix;
+wire  [6:0] tx_pix;
+sh_tilemap_5012 tilemap (
+    .clk(clk_sys), .reset(reset),
+    .line_start(line_start), .vcnt(vcnt), .ce_pix(ce_pix), .hcnt(hcnt),
+    .rowscroll_en(~pc0_out[1]), .colscroll_en(~pc0_out[2]),
+    .tile_addr(tm_tile_addr), .tile_q(tm_tile_q),
+    .text_addr(tm_text_addr), .text_q(tm_text_q),
+    .rom_addr(tm_rom_addr), .rom_p0(tm_p0), .rom_p1(tm_p1), .rom_p2(tm_p2),
+    .fg_pix(fg_pix), .bg_pix(bg_pix), .tx_pix(tx_pix)
+);
+
+// mixer, the M2 subset of segahang screen_update (road below the tile
+// layers and the sprites arrive in M3/M4): text over fg over bg over
+// palette entry 0. The per-pass priority marks join in M4.
+wire        tx_op = tx_pix[2:0] != 3'd0;
+wire        fg_op = fg_pix[2:0] != 3'd0;
+wire        bg_op = bg_pix[2:0] != 3'd0;
+wire  [9:0] mix_idx = tx_op ? {4'd0, tx_pix[5:0]} :
+                      fg_op ? fg_pix[9:0] :
+                      bg_op ? bg_pix[9:0] : 10'd0;
+wire [12:0] pal_b_addr = {3'b000, mix_idx};
+wire  [7:0] pal_r, pal_g, pal_b;
+
+wire pix_blank = hblank | vblank;
+assign r = (display_enable && !pix_blank) ? pal_r : 8'd0;
+assign g = (display_enable && !pix_blank) ? pal_g : 8'd0;
+assign b = (display_enable && !pix_blank) ? pal_b : 8'd0;
 
 endmodule

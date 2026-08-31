@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Capture MAME Y Board video RAM dumps and a screenshot at a given frame.
+"""Capture MAME segahang video RAM dumps and a screenshot at a given frame.
 
-    mame_capture.py gforce2 --frame 300 --out verif/golden/gforce2/f300 [--test]
+    mame_capture.py hangon --frame 300 --out verif/golden/hangon/f300 [--test]
 
 --test starts the game in service/test mode (DIP). The snapshot is written by
 MAME into the output directory as <setname>/0000.png and moved to frame.png.
@@ -25,20 +25,20 @@ def main():
     a = ap.parse_args()
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
-    env = dict(os.environ, YB_FRAME=str(a.frame), YB_OUT=out)
+    env = dict(os.environ, SH_FRAME=str(a.frame), SH_OUT=out)
     cfg = tempfile.mkdtemp()
     cmd = [a.mame, a.set, "-rompath", ROMPATH, "-window", "-sound", "none", "-nothrottle", "-snapview", "native",
            "-skip_gameinfo", "-snapshot_directory", out, "-nvram_directory", tempfile.mkdtemp(),
            "-cfg_directory", cfg, "-autoboot_script", os.path.join(HERE, "mame_capture.lua"),
            "-seconds_to_run", str(a.frame // 60 + 5)]
-    if a.coin is not None: env["YB_COIN"] = str(a.coin)
-    if a.start is not None: env["YB_START"] = str(a.start)
-    env["YB_TEST_FRAME"] = str(a.test_frame)
+    if a.coin is not None: env["SH_COIN"] = str(a.coin)
+    if a.start is not None: env["SH_START"] = str(a.start)
+    env["SH_TEST_FRAME"] = str(a.test_frame)
     if a.test:
         # MAME's generic "Service Mode" toggle is the F2 key; simplest is a
         # cfg file that maps the test switch... use the built-in dip override:
         cmd += ["-noautosave"]
-        env["YB_TEST"] = "1"
+        env["SH_TEST"] = "1"
     subprocess.run(cmd, env=env, check=False)
     pngs = sorted(glob.glob(os.path.join(out, a.set, "*.png")))
     if pngs:
