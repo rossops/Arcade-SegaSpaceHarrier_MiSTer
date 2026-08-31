@@ -430,7 +430,7 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M4 | Hang-On sprites + mixer + 3-bank palette effects | full frames pixel-exact vs MAME (hangon) at three capture frames, `--step-ok` residual rules |
 | M5 | Sound: jt03 + 315-5218 at 8 MHz + the mode-1 latch path, mute, Z80 reset | PCM cocotb exact; attract envelope correlation >= 0.95 vs MAME recording |
 | M6 | Hardware bring-up: Hang-On playable, controls, DIPs, OSD, timing closure (no NVRAM on this board), `hangon1/2/vf` clones | STA clean; 30 min attract; user's hardware checklist |
-| M7 | Space Harrier: sharrier map + 10 MHz enables, SHARRIER sprites (x32 fetch), road/mixer/palette variants, MCS-51 + bridge (the game's only main-CPU interrupt source) | sharrier boots through the MCU in the bench; frames vs MAME; plays on hardware |
+| M7 | Space Harrier: sharrier map + 10 MHz enables, SHARRIER sprites (x32 fetch), road/mixer/palette variants, MCS-51 + bridge — a full main-bus master per the 8751 contract in docs/notes, and the game's only main-CPU interrupt source | sharrier boots through the MCU in the bench; frames vs MAME; plays on hardware |
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
 
@@ -450,20 +450,50 @@ remembering: the PPM writer lost pixel (0,0) of every frame because the
 file opened on a nonblocking flag in the same clock the pixel arrived;
 the parents' core pipeline latency had always hidden it.
 
+M1 findings (hangon, 120 frames). Both CPUs track MAME's executed-PC
+trace at 99.87% (main, 58 resyncs) and 99.85% (sub, 60) on the first
+full run — far inside the parents' thresholds, this board having no
+three-way shared-RAM traffic. The main CPU's vblank IRQ4 (held until
+acknowledge) enters its handler exactly 100 times in both runs, the
+same frames; the sub's IRQ4 is a level the main holds through PPI1
+port A bit 6 from line 224 to 231 each frame, and its handler re-enters
+within that window a DTACK-latency-dependent number of times (MAME 249
+entries, RTL 243 over the run) — the Y Board's sub X shape, and the
+gate gives it a tolerance. The mode-1 PPI handshake works against a
+Z80 stand-in that pulses /ACK ~2 us after /OBF falls; the real Z80
+replaces it in M5. Two facts worth keeping: MAME's PORT_REVERSE on
+this board is always 0x100 - value (every reversed channel has
+min+max = 0x100), which is one count off the carried module's
+255 - value and is fixed in `sh_adc0804` and its model; and the
+sh_m68k_bus wrapper now takes its two fx68k phase enables directly,
+since this board needs /8 (Hang-On) and a fractional 10 MHz
+(accumulator, 26032/65536 per clk_sys) rather than the parents' /4.
+The i8751 side study is in docs/notes/i8751_315-5163a.md (see open
+question 2): the bridge must be a full main-bus master, IRQ4 once per
+vblank is the whole IPL story, and the 40385 suppression is a MAME
+reset-ordering patch the RTL should not copy.
+
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and
    no game visibly needs it. Leave it out; if a game polls for an
    interrupt that never comes, this is the first suspect.
-2. The i8751 bridge: MAME gives the MCU zero-cost access to the main
-   map and papers over one race by dropping the MCU's write to 40385
-   ("the mcu clears this value after the cpu sets it"). In the RTL the
-   MCU is a real concurrent master through the arbiter; understand the
-   40385 handshake (who writes what, when) before deciding whether the
-   suppression is needed at all, rather than blind-copying it. Also
-   unknown: whether the real bridge steals cycles or waits for bus grant.
-   This study runs alongside M1 (disassemble the ROM, MAME traces), not
-   inside M7 — the arbiter is designed then, and its answer shapes it.
+2. Largely resolved by the M1-side disassembly of the 315-5163A
+   (docs/notes/i8751_315-5163a.md, full listing alongside). The contract:
+   the bridge is a full main-bus master — the MCU reads the main ROM (a
+   boot checksum that must pass or it stops interrupting), lives in work
+   RAM, and block-writes tile RAM, palette, sub RAM and the I/O windows —
+   so M7's bridge goes through the main decode, not just the shared-RAM
+   arbiter slot. It raises exactly IRQ4, once per vblank, by pulsing
+   P1.2 low; latch it and clear on the 68000's IACK. The 40385 write
+   MAME suppresses is two zeroing writes during MCU reset init only; in
+   steady state the MCU merely polls 40385 as a heartbeat the 68000
+   sets. Do not special-case it in RTL: treat it as plain work RAM, get
+   the reset ordering right, and keep a bench tap that logs any MCU
+   zero-write there after the first heartbeat. The MCU paces its bus
+   accesses with delays and double-reads and never busy-waits, so
+   arbitration latency is tolerated. Still open: whether the real bridge
+   steals 68000 cycles or waits for a grant (invisible to the firmware).
 3. Which MCS-51 core to vendor (jtframe's mcs51 vs other open cores) and
    its licence fit with the GPL-3 core.
 4. jt03 integration: MAME routes the YM2203's four outputs at

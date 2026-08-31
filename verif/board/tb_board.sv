@@ -38,12 +38,12 @@ initial begin
     if ($value$plusargs("ana_mode=%d", pa))    desc.ana_mode = pa[2:0];
 end
 
-wire p0_req, p1_req, p2_req, p5_req, p6_req;
-wire p0_ack, p1_ack, p2_ack, p5_ack, p6_ack, wr_ack, sdr_ready;
-wire [24:3] p0_addr, p1_addr, p5_addr;
+wire p0_req, p1_req, p2_req, p3_req, p5_req, p6_req;
+wire p0_ack, p1_ack, p2_ack, p3_ack, p5_ack, p6_ack, wr_ack, sdr_ready;
+wire [24:3] p0_addr, p1_addr, p3_addr, p5_addr;
 wire [24:4] p2_addr;
 wire [24:1] p6_addr;
-wire [63:0] p0_dout, p1_dout, p5_dout;
+wire [63:0] p0_dout, p1_dout, p3_dout, p5_dout;
 wire [127:0] p2_dout;
 wire [15:0] p6_dout;
 
@@ -53,7 +53,7 @@ sdram_model sdram (
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
-    .p3_req(1'b0), .p3_addr(22'd0), .p3_dout(), .p3_ack(), .p3_urgent(1'b0),
+    .p3_req(p3_req), .p3_addr(p3_addr), .p3_dout(p3_dout), .p3_ack(p3_ack), .p3_urgent(1'b0),
     .p4_req(1'b0), .p4_addr(21'd0), .p4_dout(), .p4_ack(), .p4_urgent(1'b0),
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
@@ -71,6 +71,7 @@ sh_core core (
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
+    .p3_req(p3_req), .p3_addr(p3_addr), .p3_dout(p3_dout), .p3_ack(p3_ack),
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
     .brm_wr(1'b0), .brm_addr(27'd0), .brm_din(16'd0),
@@ -84,18 +85,96 @@ sh_core core (
     .trace_sub_addr(ts_addr), .trace_sub_start(ts_start), .trace_sub_fc(ts_fc)
 );
 
-// ---- traces (program-space word fetches; the executed-PC taps that follow
-// fx68k's prefetch queue return with the CPUs in M1)
-integer fm, fs, fppm;
+// ---- traces
+//  trace_*_rtl.txt : program-space word fetches (FC = 2 user / 6 supervisor)
+//  trace_*_pc.txt  : executed instructions: the PC when fx68k moves IR to
+//                    IRD (instruction start), following the prefetch queue
+//                    (the word captured into Irc came from address eab; Ir
+//                    and Ird shift the matching address along)
+integer fm, fs, fmp, fsp, fppm;
 initial begin
-    fm = $fopen("trace_main_rtl.txt", "w");
-    fs = $fopen("trace_sub_rtl.txt", "w");
+    fm  = $fopen("trace_main_rtl.txt", "w");
+    fs  = $fopen("trace_sub_rtl.txt", "w");
+    fmp = $fopen("trace_main_pc.txt", "w");
+    fsp = $fopen("trace_sub_pc.txt", "w");
     frame = 0;
 end
+`define CPU_TRACE(pfx, cpu, fh) \
+reg [23:1] pfx``_a_irc, pfx``_a_ir, pfx``_a_ird; \
+reg [23:1] pfx``_last; \
+always @(posedge clk_sys) begin \
+    if (reset) begin pfx``_a_irc <= 0; pfx``_a_ir <= 0; pfx``_a_ird <= 0; pfx``_last <= 23'h7fffff; end \
+    else begin \
+        if (cpu.excUnit.dataIo.xToIrc && cpu.enPhi2) pfx``_a_irc <= cpu.eab; \
+        if (cpu.enT1) begin \
+            if (cpu.Nanod.Ir2Ird) begin \
+                pfx``_a_ird <= pfx``_a_ir; \
+                if (pfx``_a_ir != pfx``_last) begin $fwrite(fh, "%06x\n", {pfx``_a_ir, 1'b0}); pfx``_last <= pfx``_a_ir; end \
+            end \
+            else if (cpu.microLatch[0]) pfx``_a_ir <= pfx``_a_irc; \
+        end \
+    end \
+end
+`CPU_TRACE(mt, core.main_cpu.cpu, fmp)
+`CPU_TRACE(st, core.sub_cpu.cpu, fsp)
 always @(posedge clk_sys) begin
     if (!reset) begin
         if (tm_start && tm_fc[1]) $fwrite(fm, "%06x\n", {tm_addr, 1'b0});
         if (ts_start && ts_fc[1]) $fwrite(fs, "%06x\n", {ts_addr, 1'b0});
+    end
+end
+
+// ---- PPI port B (display enable, Z80 reset, lamps, coins) and the sub
+// control byte (PPI1 port A: sub reset, sub IRQ4, ADC channel): log changes
+reg [7:0] pb0_d, pa1_d;
+always @(posedge clk_sys) begin
+    pb0_d <= core.pb0_out;
+    pa1_d <= core.pa1_out;
+    if (core.pb0_out !== pb0_d) $display("PORTB f=%0d line=%0d %02x (flip=%0d shade=%0d z80run=%0d disp=%0d)", frame, core.vcnt,
+        core.pb0_out, core.pb0_out[7], core.pb0_out[6], core.pb0_out[5], core.pb0_out[4]);
+    if (core.pa1_out !== pa1_d) $display("SUBCTL f=%0d line=%0d %02x (irq4n=%0d res=%0d adcsel=%0d)", frame, core.vcnt,
+        core.pa1_out, core.pa1_out[6], core.pa1_out[5], core.pa1_out[3:2]);
+end
+
+// ---- writes into ROM space: acknowledged and dropped by the core; logged
+// (first 8) because a game doing this is worth knowing about
+integer romwr_n = 0;
+always @(posedge clk_sys) begin
+    if (core.m_start && core.m_wr && (core.m_sel_rom || core.m_sel_subrom) && romwr_n < 8) begin
+        romwr_n = romwr_n + 1; $display("ROMWR f=%0d line=%0d main %06x", frame, core.vcnt, {core.m_addr, 1'b0});
+    end
+    if (core.s_start && core.s_wr && core.s_sel_rom && romwr_n < 8) begin
+        romwr_n = romwr_n + 1; $display("ROMWR f=%0d line=%0d sub %06x", frame, core.vcnt, {core.s_addr, 1'b0});
+    end
+end
+
+// ---- +watch_a=/+watch_b=<hex byte addr>: log shared-space accesses (sub
+// RAM C7C000-C7FFFF / road C68000-C68FFF, give the sub-CPU-view low bits):
+// writes always, reads when the value changed. For chasing CPU handshakes.
+integer watch_a = -1, watch_b = -1;
+initial begin
+    if (!$value$plusargs("watch_a=%h", watch_a)) watch_a = -1;
+    if (!$value$plusargs("watch_b=%h", watch_b)) watch_b = -1;
+end
+reg        w_hit; reg w_cpu; reg w_we; reg [1:0] w_be; reg [15:0] w_din; reg [13:0] w_addr;
+reg [15:0] w_last_a, w_last_b;
+reg        w_seen_a, w_seen_b;
+initial begin w_seen_a = 1'b0; w_seen_b = 1'b0; end
+always @(posedge clk_sys) begin
+    w_hit <= 1'b0;
+    if (core.shr_pick_m || core.shr_pick_s) begin
+        if ({18'd0, core.shr_addr, 1'b0} == watch_a || {18'd0, core.shr_addr, 1'b0} == watch_b) begin
+            w_hit <= 1'b1; w_cpu <= core.shr_pick_s;
+            w_we <= core.shr_we; w_be <= core.shr_be; w_din <= core.shr_din; w_addr <= {core.shr_addr, 1'b0};
+        end
+    end
+    if (w_hit) begin
+        if (w_we || (w_addr == watch_a[13:0] ? (!w_seen_a || core.shr_q != w_last_a) : (!w_seen_b || core.shr_q != w_last_b))) begin
+            $display("SHR f=%0d line=%0d %s %s +%04x be=%b din=%04x q=%04x", frame, core.vcnt,
+                     w_cpu ? "sub" : "main", w_we ? "wr" : "rd", w_addr, w_be, w_din, core.shr_q);
+            if (w_addr == watch_a[13:0]) begin w_seen_a <= !w_we; w_last_a <= core.shr_q; end
+            else begin w_seen_b <= !w_we; w_last_b <= core.shr_q; end
+        end
     end
 end
 

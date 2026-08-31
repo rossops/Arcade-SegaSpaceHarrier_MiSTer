@@ -1,10 +1,10 @@
--- Press Coin 1 at frame YB_COIN and 1 Player Start at each frame in YB_STARTS
+-- Press Coin 1 at frame SH_COIN and 1 Player Start at each frame in SH_STARTS
 -- (comma-separated), four frames each. Used by mame_trace.py next to the
 -- debugger's trace so a traced run can reach a screen behind inputs.
 local frame = 0
-local coin = tonumber(os.getenv("YB_COIN") or "-1")
+local coin = tonumber(os.getenv("SH_COIN") or "-1")
 local starts = {}
-for s in string.gmatch(os.getenv("YB_STARTS") or "", "[^,]+") do starts[#starts + 1] = tonumber(s) end
+for s in string.gmatch(os.getenv("SH_STARTS") or "", "[^,]+") do starts[#starts + 1] = tonumber(s) end
 local function press(field, on)
   local p = manager.machine.ioport.ports[":GENERAL"]; local f = p.fields[field]; if f then f:set_value(on and 1 or 0) end
 end

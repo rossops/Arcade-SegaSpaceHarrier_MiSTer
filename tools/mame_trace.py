@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Record MAME's executed-PC trace for the Y Board 68000s.
+"""Record MAME's executed-PC trace for the segahang 68000s.
 
-    mame_trace.py gforce2 --seconds 2 --out verif/golden/gforce2
+    mame_trace.py hangon --seconds 2 --out verif/golden/hangon
 
-Runs MAME headless with a debugger script that traces the three CPUs from
+Runs MAME headless with a debugger script that traces both CPUs from
 reset, then keeps just the PC column so tools/trace_compare.py can check the
 RTL's fetch stream against it.
 """
 import argparse, os, subprocess, sys, tempfile
 
 ROMPATH = "/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)"
-CPUS = (("main", "maincpu"), ("subx", "subx"), ("suby", "suby"))
+CPUS = (("main", "maincpu"), ("sub", "subcpu"))
 
 
 def main():
@@ -38,8 +38,8 @@ def main():
     if a.coin is not None or a.starts:
         # the presses come from tools/mame_presses.lua, driven by YB_COIN / YB_STARTS
         cmd += ["-autoboot_script", os.path.join(os.path.dirname(os.path.abspath(__file__)), "mame_presses.lua")]
-        if a.coin is not None: env["YB_COIN"] = str(a.coin)
-        if a.starts: env["YB_STARTS"] = a.starts
+        if a.coin is not None: env["SH_COIN"] = str(a.coin)
+        if a.starts: env["SH_STARTS"] = a.starts
     print(" ".join(cmd))
     subprocess.run(cmd, check=False, env=env)
     for name, _ in CPUS:

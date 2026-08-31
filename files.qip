@@ -18,6 +18,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_rom_cache.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_ana_shape.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_adc0804.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_i8255.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_rom_loader.sv

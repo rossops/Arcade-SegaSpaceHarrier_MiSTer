@@ -1,7 +1,7 @@
 # Verilator board simulation. From repo root: make -C verif/board run FRAMES=10
 ROOT := $(abspath ../..)
 SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
-  rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/cpu/sh_rom_cache.sv rtl/cpu/sh_m68k_bus.sv \
+  rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv rtl/cpu/sh_m68k_bus.sv \
   rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
   rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys.sv rtl/video/sh_palette_5242.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv

@@ -4,15 +4,16 @@
 # Quartus would otherwise report (unlike verif/lint.sh this is not -Wall).
 set -e
 cd "$(dirname "$0")/.."
-verilator --lint-only -DSIMULATION --top-module emu -DSH_Z80_TV80 -Isys -Irtl/video \
+verilator --lint-only -DSIMULATION --top-module emu -DSH_Z80_TV80 -Isys -Irtl/video -Irtl/cpu/fx68k \
   -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-PROCASSINIT \
   -Wno-IMPORTSTAR -Wno-WIDTH -Wno-PINCONNECTEMPTY -Wno-CASEINCOMPLETE \
   -Wno-BLKSEQ -Wno-TIMESCALEMOD -Wno-PINMISSING -Wno-UNOPTFLAT \
   -Wno-CASEOVERLAP -Wno-LATCH -Wno-SYNCASYNCNET -Wno-COMBDLY -Wno-INITIALDLY \
   -Wno-ASCRANGE -Wno-LITENDIAN -Wno-PROCASSWIRE -Wno-IMPLICIT -Wno-IMPLICITSTATIC -Wno-CASEX \
-  rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sdram.sv \
+  verif/fx68k.vlt rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sdram.sv \
   rtl/mem/sh_rom_loader.sv rtl/mem/sh_dpram.sv \
-  rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/cpu/sh_rom_cache.sv \
+  rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv \
+  rtl/cpu/sh_m68k_bus.sv rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
   rtl/video/sh_palette_5242.sv rtl/sh_core.sv rtl/pll.v \
   sys/hps_io.sv sys/arcade_video.v sys/video_freak.sv sys/scandoubler.v \
   sys/scanlines.v sys/gamma_corr.sv sys/video_cleaner.sv sys/video_mixer.sv \

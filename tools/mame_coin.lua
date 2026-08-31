@@ -1,5 +1,5 @@
--- Press Coin 1 for four frames starting at frame YB_COIN (for audio captures).
-local coin_frame = tonumber(os.getenv("YB_COIN") or "120")
+-- Press Coin 1 for four frames starting at frame SH_COIN (for audio captures).
+local coin_frame = tonumber(os.getenv("SH_COIN") or "120")
 local frame = 0
 local field = nil
 emu.register_frame_done(function()

@@ -242,12 +242,12 @@ sh_rom_loader loader (
 );
 
 /////////////////////////////////   SDRAM   ///////////////////////////////////
-wire        p0_req, p0_ack, p1_req, p1_ack, p2_req, p2_ack;
+wire        p0_req, p0_ack, p1_req, p1_ack, p2_req, p2_ack, p3_req, p3_ack;
 wire        p5_req, p5_ack, p6_req, p6_ack;
-wire [24:3] p0_addr, p1_addr, p5_addr;
+wire [24:3] p0_addr, p1_addr, p3_addr, p5_addr;
 wire [24:4] p2_addr;
 wire [24:1] p6_addr;
-wire [63:0] p0_dout, p1_dout, p5_dout;
+wire [63:0] p0_dout, p1_dout, p3_dout, p5_dout;
 wire[127:0] p2_dout;
 wire [15:0] p6_dout;
 
@@ -261,7 +261,7 @@ sdram sdram (
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
-    .p3_req(1'b0), .p3_addr('0), .p3_dout(), .p3_ack(), .p3_urgent(1'b0),
+    .p3_req(p3_req), .p3_addr(p3_addr), .p3_dout(p3_dout), .p3_ack(p3_ack), .p3_urgent(1'b0),
     .p4_req(1'b0), .p4_addr('0), .p4_dout(), .p4_ack(), .p4_urgent(1'b0),
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
@@ -289,6 +289,7 @@ sh_core core (
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
+    .p3_req(p3_req), .p3_addr(p3_addr), .p3_dout(p3_dout), .p3_ack(p3_ack),
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
     .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),

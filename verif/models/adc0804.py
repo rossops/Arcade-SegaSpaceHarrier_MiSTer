@@ -1,5 +1,7 @@
-"""ADC0804 with the X Board channel mux and reverse mask (MAME adc0804.cpp
-+ segaxbd.cpp analog_r). Conversion takes 74 ADC clocks; the input is
+"""ADC0804 with the channel mux and reverse mask (MAME adc0804.cpp +
+segahang.cpp analog_r). PORT_REVERSE is min+max - value and every reversed
+channel on this board has min+max = 0x100. Conversion takes 74 ADC clocks;
+the input is
 sampled when the conversion completes; a read clears /INTR."""
 
 
@@ -30,7 +32,7 @@ class Adc0804:
         if self.count == self.CYCLES - 1:
             v = self.channels[self.channel]
             if (self.reverse >> self.channel) & 1:
-                v = 255 - v
+                v = (0x100 - v) & 0xFF
             self.result = v
             self.busy = False
             self.intr = True

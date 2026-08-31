@@ -1,0 +1,569 @@
+; ===========================================================================
+; Space Harrier i8751 MCU  --  315-5163A.ic32
+; 4096 bytes internal ROM, from MAME 0.289 "sharrier" set
+; SHA1 73801db79756b0ffdd54b298814e3eeb088fe8c2  (matches ROM_LOAD in segahang.cpp)
+;
+; Disassembled by a hand-written table-driven MCS-51 disassembler
+; (scratchpad/dis51.py). Recursive traversal from the six interrupt vectors;
+; unreached bytes are shown as "db". Columns: addr  raw-bytes  label  mnemonic.
+; Everything from 0x0BDF up is data or dead code (no code path reaches it and
+; there is no JMP @A+DPTR anywhere in the image).
+;
+; Bit addresses in bank-0 bit space are shown as 0xNN.b (e.g. 0x20.0 = bit 0
+; of internal RAM byte 0x20). SFR bits use their canonical names.
+; ===========================================================================
+0000  02 01 23  L0000: ljmp  0x0123
+0003  02 03 45  L0003: ljmp  0x0345
+0006  ; 5 bytes of 0xFF
+000B  02 04 57  L000B: ljmp  0x0457
+000E  ; 5 bytes of 0xFF
+0013  02 04 56  L0013: ljmp  0x0456
+0016  ; 5 bytes of 0xFF
+001B  02 05 67  L001B: ljmp  0x0567
+001E  ; 5 bytes of 0xFF
+0023  32        L0023: reti
+0024  ; 255 bytes of 0x00
+0123  75 A8 03  L0123: mov   IE, #0x03
+0126  75 B8 00         mov   IP, #0x00
+0129  75 88 05         mov   TCON, #0x05
+012C  75 89 11         mov   TMOD, #0x11
+012F  75 8C 00         mov   TH0, #0x00
+0132  75 8A 00         mov   TL0, #0x00
+0135  75 D0 00         mov   PSW, #0x00
+0138  75 81 50         mov   SP, #0x50
+013B  75 90 FF         mov   P1, #0xFF
+013E  75 B0 FF         mov   P3, #0xFF
+0141  E4               clr   a
+0142  F8               mov   r0, a
+0143  F6        L0143: mov   @r0, a
+0144  08               inc   r0
+0145  B8 80 FB         cjne  r0, #0x80, 0x0143
+0148  75 90 FF         mov   P1, #0xFF
+014B  90 F1 10         mov   dptr, #0xF110
+014E  AD 83            mov   r5, DPH
+0150  AC 82            mov   r4, DPL
+0152  90 00 00         mov   dptr, #0x0000
+0155  E4        L0155: clr   a
+0156  93               movc  a, @a+dptr
+0157  2A               add   a, r2
+0158  FA               mov   r2, a
+0159  E4               clr   a
+015A  3B               addc  a, r3
+015B  FB               mov   r3, a
+015C  75 90 FF         mov   P1, #0xFF
+015F  A3               inc   dptr
+0160  C0 83            push  DPH
+0162  C0 82            push  DPL
+0164  8C 82            mov   DPL, r4
+0166  8D 83            mov   DPH, r5
+0168  A3               inc   dptr
+0169  AC 82            mov   r4, DPL
+016B  AD 83            mov   r5, DPH
+016D  E5 83            mov   a, DPH
+016F  45 82            orl   a, DPL
+0171  D0 82            pop   DPL
+0173  D0 83            pop   DPH
+0175  70 DE            jnz   0x0155
+0177  90 0E F0         mov   dptr, #0x0EF0
+017A  E4               clr   a
+017B  93               movc  a, @a+dptr
+017C  C3               clr   c
+017D  9A               subb  a, r2
+017E  FA               mov   r2, a
+017F  A3               inc   dptr
+0180  E4               clr   a
+0181  93               movc  a, @a+dptr
+0182  C3               clr   c
+0183  9B               subb  a, r3
+0184  4A               orl   a, r2
+0185  60 05            jz    0x018C
+0187  75 90 FF  L0187: mov   P1, #0xFF
+018A  80 FB            sjmp  0x0187
+018C  75 90 FF  L018C: mov   P1, #0xFF
+018F  75 90 AF         mov   P1, #0xAF
+0192  90 D5 00         mov   dptr, #0xD500
+0195  A3        L0195: inc   dptr
+0196  E5 83            mov   a, DPH
+0198  45 82            orl   a, DPL
+019A  70 F9            jnz   0x0195
+019C  75 90 FF         mov   P1, #0xFF
+019F  75 90 A7         mov   P1, #0xA7
+01A2  90 03 84         mov   dptr, #0x0384
+01A5  E4               clr   a
+01A6  F0               movx  @dptr, a
+01A7  12 05 70         lcall 0x0570
+01AA  F0               movx  @dptr, a
+01AB  12 05 70         lcall 0x0570
+01AE  75 90 FF         mov   P1, #0xFF
+01B1  90 CB EB         mov   dptr, #0xCBEB
+01B4  A3        L01B4: inc   dptr
+01B5  E5 83            mov   a, DPH
+01B7  45 82            orl   a, DPL
+01B9  70 F9            jnz   0x01B4
+01BB  75 90 FF         mov   P1, #0xFF
+01BE  75 90 CF         mov   P1, #0xCF
+01C1  74 2D            mov   a, #0x2D
+01C3  90 00 00         mov   dptr, #0x0000
+01C6  12 0B CD         lcall 0x0BCD
+01C9  E4               clr   a
+01CA  FA               mov   r2, a
+01CB  FB               mov   r3, a
+01CC  FC               mov   r4, a
+01CD  FD               mov   r5, a
+01CE  74 34            mov   a, #0x34
+01D0  12 0D EF         lcall 0x0DEF
+01D3  75 F0 87         mov   B, #0x87
+01D6  12 09 AB         lcall 0x09AB
+01D9  74 33            mov   a, #0x33
+01DB  12 0D EF         lcall 0x0DEF
+01DE  75 F0 8F         mov   B, #0x8F
+01E1  12 09 AB         lcall 0x09AB
+01E4  74 32            mov   a, #0x32
+01E6  12 0D EF         lcall 0x0DEF
+01E9  75 F0 97         mov   B, #0x97
+01EC  12 09 AB         lcall 0x09AB
+01EF  74 31            mov   a, #0x31
+01F1  12 0D EF         lcall 0x0DEF
+01F4  75 F0 9F         mov   B, #0x9F
+01F7  12 09 AB         lcall 0x09AB
+01FA  74 30            mov   a, #0x30
+01FC  12 0D EF         lcall 0x0DEF
+01FF  74 F1            mov   a, #0xF1
+0201  C3               clr   c
+0202  9A               subb  a, r2
+0203  70 06            jnz   0x020B
+0205  74 B4            mov   a, #0xB4
+0207  C3               clr   c
+0208  9B               subb  a, r3
+0209  60 02            jz    0x020D
+020B  D2 00     L020B: setb  0x20.0
+020D  74 7E     L020D: mov   a, #0x7E
+020F  C3               clr   c
+0210  9C               subb  a, r4
+0211  70 06            jnz   0x0219
+0213  74 D0            mov   a, #0xD0
+0215  C3               clr   c
+0216  9D               subb  a, r5
+0217  60 04            jz    0x021D
+0219  D2 08     L0219: setb  0x21.0
+021B  D2 00            setb  0x20.0
+021D  74 55     L021D: mov   a, #0x55
+021F  55 88            anl   a, TCON
+0221  F5 88            mov   TCON, a
+0223  75 34 C0         mov   0x34, #0xC0
+0226  75 30 0A         mov   0x30, #0x0A
+0229  75 31 1E         mov   0x31, #0x1E
+022C  D2 AF            setb  EA
+022E  00               nop
+022F  00               nop
+0230  00               nop
+0231  00               nop
+0232  00               nop
+0233  00               nop
+0234  74 55     L0234: mov   a, #0x55
+0236  55 88            anl   a, TCON
+0238  F5 88            mov   TCON, a
+023A  74 FA            mov   a, #0xFA
+023C  14        L023C: dec   a
+023D  00               nop
+023E  00               nop
+023F  00               nop
+0240  00               nop
+0241  00               nop
+0242  70 F8            jnz   0x023C
+0244  12 0A BC         lcall 0x0ABC
+0247  12 08 9A         lcall 0x089A
+024A  12 06 78         lcall 0x0678
+024D  20 10 03         jb    0x22.0, 0x0253
+0250  12 07 89         lcall 0x0789
+0253  12 0A D6  L0253: lcall 0x0AD6
+0256  75 90 FF         mov   P1, #0xFF
+0259  D2 AF            setb  EA
+025B  20 B2 FD  L025B: jb    INT0, 0x025B
+025E  80 D4            sjmp  0x0234
+0260  ; 229 bytes of 0x00
+0345  C0 E0     L0345: push  ACC
+0347  C0 D0            push  PSW
+0349  C0 82            push  DPL
+034B  C0 83            push  DPH
+034D  C0 90            push  P1
+034F  C2 D4            clr   RS1
+0351  D2 D3            setb  RS0
+0353  C2 89            clr   IE0
+0355  20 08 10         jb    0x21.0, 0x0368
+0358  75 90 EF         mov   P1, #0xEF
+035B  74 1C            mov   a, #0x1C
+035D  F2               movx  @r0, a
+035E  12 05 70         lcall 0x0570
+0361  C2 92            clr   P1.2
+0363  12 05 70         lcall 0x0570
+0366  D2 92            setb  P1.2
+0368  D0 90     L0368: pop   P1
+036A  D0 83            pop   DPH
+036C  D0 82            pop   DPL
+036E  D0 D0            pop   PSW
+0370  D0 E0            pop   ACC
+0372  32               reti
+0373  ; 227 bytes of 0x00
+0456  32        L0456: reti
+0457  C0 E0     L0457: push  ACC
+0459  C0 D0            push  PSW
+045B  C0 82            push  DPL
+045D  C0 83            push  DPH
+045F  C0 90            push  P1
+0461  C2 8D            clr   TF0
+0463  85 36 82         mov   DPL, 0x36
+0466  85 37 83         mov   DPH, 0x37
+0469  A3               inc   dptr
+046A  E5 83            mov   a, DPH
+046C  45 82            orl   a, DPL
+046E  70 17            jnz   0x0487
+0470  D2 D4            setb  RS1
+0472  C2 D3            clr   RS0
+0474  75 90 B7         mov   P1, #0xB7
+0477  E5 35            mov   a, 0x35
+0479  F5 82            mov   DPL, a
+047B  03               rr    a
+047C  03               rr    a
+047D  F5 83            mov   DPH, a
+047F  03               rr    a
+0480  F0               movx  @dptr, a
+0481  12 05 70         lcall 0x0570
+0484  90 FF FF         mov   dptr, #0xFFFF
+0487  85 82 36  L0487: mov   0x36, DPL
+048A  85 83 37         mov   0x37, DPH
+048D  D0 90            pop   P1
+048F  D0 83            pop   DPH
+0491  D0 82            pop   DPL
+0493  D0 D0            pop   PSW
+0495  D0 E0            pop   ACC
+0497  32               reti
+0498  ; 207 bytes of 0x00
+0567  32        L0567: reti
+0568  E5 90     L0568: mov   a, P1
+056A  54 87            anl   a, #0x87
+056C  4F               orl   a, r7
+056D  F5 90            mov   P1, a
+056F  22               ret
+0570  C0 E0     L0570: push  ACC
+0572  74 04            mov   a, #0x04
+0574  D5 E0 FD  L0574: djnz  ACC, 0x0574
+0577  D0 E0            pop   ACC
+0579  22               ret
+057A  ; 254 bytes of 0x00
+0678  85 33 82  L0678: mov   DPL, 0x33
+067B  85 34 83         mov   DPH, 0x34
+067E  A3               inc   dptr
+067F  E5 82            mov   a, DPL
+0681  45 83            orl   a, DPH
+0683  70 43            jnz   0x06C8
+0685  E5 35            mov   a, 0x35
+0687  F5 F0            mov   B, a
+0689  A4               mul   ab
+068A  D2 E7            setb  ACC.7
+068C  D2 F7            setb  B.7
+068E  F8               mov   r0, a
+068F  A9 F0            mov   r1, B
+0691  65 F0            xrl   a, B
+0693  FA               mov   r2, a
+0694  0A               inc   r2
+0695  30 00 04         jnb   0x20.0, 0x069C
+0698  D2 8C            setb  TR0
+069A  1A               dec   r2
+069B  1A               dec   r2
+069C  7F 20     L069C: mov   r7, #0x20
+069E  B1 68            acall 0x0568
+06A0  90 00 91         mov   dptr, #0x0091
+06A3  74 FF            mov   a, #0xFF
+06A5  F0               movx  @dptr, a
+06A6  B1 70            acall 0x0570
+06A8  7F 50            mov   r7, #0x50
+06AA  B1 68            acall 0x0568
+06AC  90 44 4F         mov   dptr, #0x444F
+06AF  E8               mov   a, r0
+06B0  F0               movx  @dptr, a
+06B1  B1 70            acall 0x0570
+06B3  7F 20            mov   r7, #0x20
+06B5  B1 68            acall 0x0568
+06B7  90 04 EF         mov   dptr, #0x04EF
+06BA  E9               mov   a, r1
+06BB  F0               movx  @dptr, a
+06BC  B1 70            acall 0x0570
+06BE  90 00 91         mov   dptr, #0x0091
+06C1  EA               mov   a, r2
+06C2  F0               movx  @dptr, a
+06C3  B1 70            acall 0x0570
+06C5  90 B9 B0         mov   dptr, #0xB9B0
+06C8  85 82 33  L06C8: mov   0x33, DPL
+06CB  85 83 34         mov   0x34, DPH
+06CE  22               ret
+06CF  ; 186 bytes of 0x00
+0789  7F 20     L0789: mov   r7, #0x20
+078B  B1 68            acall 0x0568
+078D  90 03 84         mov   dptr, #0x0384
+0790  E0               movx  a, @dptr
+0791  B1 70            acall 0x0570
+0793  E0               movx  a, @dptr
+0794  B1 70            acall 0x0570
+0796  60 38            jz    0x07D0
+0798  90 03 81         mov   dptr, #0x0381
+079B  7E B7            mov   r6, #0xB7
+079D  12 07 D9         lcall 0x07D9
+07A0  60 22            jz    0x07C4
+07A2  90 04 F4         mov   dptr, #0x04F4
+07A5  7E BF            mov   r6, #0xBF
+07A7  12 07 D9         lcall 0x07D9
+07AA  60 18            jz    0x07C4
+07AC  90 02 F4         mov   dptr, #0x02F4
+07AF  7E AE            mov   r6, #0xAE
+07B1  12 07 D9         lcall 0x07D9
+07B4  60 0E            jz    0x07C4
+07B6  7F 50            mov   r7, #0x50
+07B8  B1 68            acall 0x0568
+07BA  90 43 E2         mov   dptr, #0x43E2
+07BD  7E BF            mov   r6, #0xBF
+07BF  12 07 D9         lcall 0x07D9
+07C2  70 07            jnz   0x07CB
+07C4  75 30 0A  L07C4: mov   0x30, #0x0A
+07C7  75 31 1E         mov   0x31, #0x1E
+07CA  22               ret
+07CB  78 30     L07CB: mov   r0, #0x30
+07CD  02 07 D2         ljmp  0x07D2
+07D0  78 31     L07D0: mov   r0, #0x31
+07D2  16        L07D2: dec   @r0
+07D3  E6               mov   a, @r0
+07D4  70 02            jnz   0x07D8
+07D6  D2 10            setb  0x22.0
+07D8  22        L07D8: ret
+07D9  E0        L07D9: movx  a, @dptr
+07DA  B1 70            acall 0x0570
+07DC  E0               movx  a, @dptr
+07DD  B1 70            acall 0x0570
+07DF  2E               add   a, r6
+07E0  F0               movx  @dptr, a
+07E1  B1 70            acall 0x0570
+07E3  22               ret
+07E4  ; 182 bytes of 0x00
+089A  30 10 0D  L089A: jnb   0x22.0, 0x08AA
+089D  7F 20            mov   r7, #0x20
+089F  12 05 68         lcall 0x0568
+08A2  74 10            mov   a, #0x10
+08A4  90 04 92         mov   dptr, #0x0492
+08A7  02 0B CD         ljmp  0x0BCD
+08AA  75 32 00  L08AA: mov   0x32, #0x00
+08AD  E5 32     L08AD: mov   a, 0x32
+08AF  23               rl    a
+08B0  23               rl    a
+08B1  F8               mov   r0, a
+08B2  7F 60            mov   r7, #0x60
+08B4  12 05 68         lcall 0x0568
+08B7  90 00 20         mov   dptr, #0x0020
+08BA  E0               movx  a, @dptr
+08BB  12 05 70         lcall 0x0570
+08BE  E0               movx  a, @dptr
+08BF  12 05 70         lcall 0x0570
+08C2  54 E3            anl   a, #0xE3
+08C4  48               orl   a, r0
+08C5  F0               movx  @dptr, a
+08C6  12 05 70         lcall 0x0570
+08C9  90 00 30         mov   dptr, #0x0030
+08CC  F0               movx  @dptr, a
+08CD  12 05 70         lcall 0x0570
+08D0  7F 21            mov   r7, #0x21
+08D2  DF FE     L08D2: djnz  r7, 0x08D2
+08D4  E0               movx  a, @dptr
+08D5  12 05 70         lcall 0x0570
+08D8  E0               movx  a, @dptr
+08D9  12 05 70         lcall 0x0570
+08DC  FA               mov   r2, a
+08DD  7F 20            mov   r7, #0x20
+08DF  12 05 68         lcall 0x0568
+08E2  90 04 91         mov   dptr, #0x0491
+08E5  05 32            inc   0x32
+08E7  E5 32            mov   a, 0x32
+08E9  A3        L08E9: inc   dptr
+08EA  D5 E0 FC         djnz  ACC, 0x08E9
+08ED  63 82 01         xrl   DPL, #0x01
+08F0  EA               mov   a, r2
+08F1  F0               movx  @dptr, a
+08F2  12 05 70         lcall 0x0570
+08F5  F0               movx  @dptr, a
+08F6  12 05 70         lcall 0x0570
+08F9  E5 32            mov   a, 0x32
+08FB  24 FA            add   a, #0xFA
+08FD  50 AE            jnc   0x08AD
+08FF  22               ret
+0900  ; 171 bytes of 0x00
+09AB  7E 00     L09AB: mov   r6, #0x00
+09AD  7F E0            mov   r7, #0xE0
+09AF  90 00 00         mov   dptr, #0x0000
+09B2  85 F0 90  L09B2: mov   P1, B
+09B5  E0               movx  a, @dptr
+09B6  12 05 70         lcall 0x0570
+09B9  E0               movx  a, @dptr
+09BA  12 05 70         lcall 0x0570
+09BD  C0 E0            push  ACC
+09BF  2C               add   a, r4
+09C0  FC               mov   r4, a
+09C1  E4               clr   a
+09C2  3D               addc  a, r5
+09C3  FD               mov   r5, a
+09C4  D0 E0            pop   ACC
+09C6  62 02            xrl   0x02, a
+09C8  A3               inc   dptr
+09C9  E0               movx  a, @dptr
+09CA  12 05 70         lcall 0x0570
+09CD  E0               movx  a, @dptr
+09CE  12 05 70         lcall 0x0570
+09D1  C0 E0            push  ACC
+09D3  2C               add   a, r4
+09D4  FC               mov   r4, a
+09D5  E4               clr   a
+09D6  3D               addc  a, r5
+09D7  FD               mov   r5, a
+09D8  D0 E0            pop   ACC
+09DA  62 03            xrl   0x03, a
+09DC  A3               inc   dptr
+09DD  C3               clr   c
+09DE  EB               mov   a, r3
+09DF  13               rrc   a
+09E0  FB               mov   r3, a
+09E1  EA               mov   a, r2
+09E2  13               rrc   a
+09E3  FA               mov   r2, a
+09E4  50 06            jnc   0x09EC
+09E6  63 03 88         xrl   0x03, #0x88
+09E9  63 02 10         xrl   0x02, #0x10
+09EC  75 90 FF  L09EC: mov   P1, #0xFF
+09EF  85 F0 90         mov   P1, B
+09F2  12 05 70         lcall 0x0570
+09F5  A3               inc   dptr
+09F6  A3               inc   dptr
+09F7  A3               inc   dptr
+09F8  A3               inc   dptr
+09F9  A3               inc   dptr
+09FA  A3               inc   dptr
+09FB  C0 82            push  DPL
+09FD  C0 83            push  DPH
+09FF  8E 82            mov   DPL, r6
+0A01  8F 83            mov   DPH, r7
+0A03  A3               inc   dptr
+0A04  AE 82            mov   r6, DPL
+0A06  AF 83            mov   r7, DPH
+0A08  E5 82            mov   a, DPL
+0A0A  45 83            orl   a, DPH
+0A0C  D0 83            pop   DPH
+0A0E  D0 82            pop   DPL
+0A10  70 A0            jnz   0x09B2
+0A12  22               ret
+0A13  ; 169 bytes of 0x00
+0ABC  E5 35     L0ABC: mov   a, 0x35
+0ABE  F5 F0            mov   B, a
+0AC0  A4               mul   ab
+0AC1  04               inc   a
+0AC2  F5 35            mov   0x35, a
+0AC4  85 F0 83         mov   DPH, B
+0AC7  C0 E0     L0AC7: push  ACC
+0AC9  F5 82            mov   DPL, a
+0ACB  E0               movx  a, @dptr
+0ACC  12 05 70         lcall 0x0570
+0ACF  D0 E0            pop   ACC
+0AD1  94 14            subb  a, #0x14
+0AD3  50 F2            jnc   0x0AC7
+0AD5  22               ret
+0AD6  7E 17     L0AD6: mov   r6, #0x17
+0AD8  E5 33            mov   a, 0x33
+0ADA  20 E2 02         jb    ACC.2, 0x0ADF
+0ADD  7E 22            mov   r6, #0x22
+0ADF  7F 50     L0ADF: mov   r7, #0x50
+0AE1  12 05 68         lcall 0x0568
+0AE4  90 44 F5         mov   dptr, #0x44F5
+0AE7  EE               mov   a, r6
+0AE8  12 0B CD         lcall 0x0BCD
+0AEB  22               ret
+0AEC  ; 225 bytes of 0x00
+0BCD  FB        L0BCD: mov   r3, a
+0BCE  83               movc  a, @a+pc
+0BCF  FA               mov   r2, a
+0BD0  EB               mov   a, r3
+0BD1  24 FA            add   a, #0xFA
+0BD3  FB               mov   r3, a
+0BD4  EB        L0BD4: mov   a, r3
+0BD5  83               movc  a, @a+pc
+0BD6  F0               movx  @dptr, a
+0BD7  12 05 70         lcall 0x0570
+0BDA  A3               inc   dptr
+0BDB  0B               inc   r3
+0BDC  DA F6            djnz  r2, 0x0BD4
+0BDE  22               ret
+0BDF  db 06 03 01 00 07 00 07 0A 00 01 01 02 03 05 08 0D
+0BEF  db 15 22 0A 00 01 00 04 00 08 00 10 00 20 10 0F 00
+0BFF  db 0F 00 0F 00 0F 00 0F 00 0F 00 0F 00 00 00 00 00
+0C0F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C1F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C2F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C3F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C4F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C5F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C6F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C7F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C8F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0C9F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CAF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CBF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CCF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CDF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CEF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0CFF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D0F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D1F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D2F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D3F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D4F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D5F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D6F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D7F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D8F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0D9F  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0DAF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0DBF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0DCF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0DDF  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0DEF  75 90 C7  L0DEF: mov   P1, #0xC7
+0DF2  90 87 58         mov   dptr, #0x8758
+0DF5  F0               movx  @dptr, a
+0DF6  12 05 70         lcall 0x0570
+0DF9  22               ret
+0DFA  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E0A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E1A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E2A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E3A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E4A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E5A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E6A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E7A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E8A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0E9A  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0EAA  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0EBA  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0ECA  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0EDA  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0EEA  db 00 00 00 00 00 00 7D D4 00 00 00 00 00 00 00 00
+0EFA  db 00 00 00 00 00 00 C0 D0 D2 D5 80 04 C0 D0 C2 D5
+0F0A  db 10 8C 04 C2 D3 80 02 D2 D3 10 8E 04 C2 D4 80 05
+0F1A  db D2 D4 80 01 83 80 FE 80 FB E1 41 E1 45 E1 50 E1
+0F2A  db 5A E1 4A E1 68 E1 6C E1 70 E1 81 E1 85 E1 A1 E1
+0F3A  db AF E1 E2 E1 B5 E1 D7 74 CC E1 1F 90 00 00 E1 1F
+0F4A  db D0 E0 C0 E0 E1 1E 15 81 D0 E0 C0 E0 05 81 E1 1E
+0F5A  db 15 81 15 81 D0 E0 C0 E0 05 81 05 81 E1 1E E5 8A
+0F6A  db E1 1E D2 00 E1 1F 90 00 00 E4 E0 F5 F0 A3 E4 E0
+0F7A  db 85 F0 83 F5 82 E1 DE F0 A3 E1 1F 15 81 D0 F0 D0
+0F8A  db E0 C3 20 D5 04 94 06 80 02 94 07 50 02 15 F0 C0
+0F9A  db E0 C0 F0 05 81 E1 1F 15 81 15 81 15 81 C0 82 C0
+0FAA  db 83 05 81 E1 1F 15 81 C0 E0 E1 1F 00 75 00 00 00
+0FBA  db 75 00 00 00 75 00 00 00 75 00 00 00 75 00 00 00
+0FCA  db 75 00 00 00 75 00 00 00 75 00 00 E1 1F 85 7E 83
+0FDA  db 00 85 7F 82 E4 93 E1 1F 30 D3 02 D2 8C 30 D4 02
+0FEA  db D2 8E 20 D5 03 D0 D0 22 D0 D0 D2 AF 22 E4 00 00
+0FFA  db 00 00 00 00 00 00

@@ -1,9 +1,9 @@
 //============================================================================
-//  ADC0804 (IC165) with the X Board's 8-way analog multiplexer
+//  ADC0804 with the analog input multiplexer (74HC4052 on this board)
 //  A write starts a conversion (ignored while one is running); 74 ADC clocks
-//  later (ADC clock = 68000 E = 1.25 MHz -> 59.2 us) the result is latched
+//  later (ADC clock = 25.1748 MHz/4/6 = 1.049 MHz -> 70.5 us) the result is latched
 //  and /INTR asserts. A read returns the last result and clears /INTR.
-//  Channel select = I/O chip #1 port C bits 4:2 (MAME, from the schematic).
+//  Channel select = the sub PPI port A bits 3:2 (MAME segahang.cpp).
 //  Reference MAME adc0804.cpp + segaxbd.cpp analog_r.
 //============================================================================
 module sh_adc0804 (
@@ -28,7 +28,10 @@ reg       intr_r;
 wire [7:0] sel = channel == 3'd0 ? ch0 : channel == 3'd1 ? ch1 : channel == 3'd2 ? ch2 :
                  channel == 3'd3 ? ch3 : channel == 3'd4 ? ch4 : channel == 3'd5 ? ch5 :
                  channel == 3'd6 ? ch6 : ch7;
-wire [7:0] vin = adc_reverse[channel] ? (8'd255 - sel) : sel;
+// PORT_REVERSE is min+max - value, and every reversed channel on this board
+// has min+max = 0x100 (0x20-0xE0 or 0x01-0xFF), so a centred 0x80 stays
+// 0x80 (the Y Board's MSM6253 was one count off with 255 - value)
+wire [7:0] vin = adc_reverse[channel] ? (8'd0 - sel) : sel;
 
 assign dout = result;
 assign intr = intr_r;

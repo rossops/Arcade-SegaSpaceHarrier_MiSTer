@@ -1,9 +1,10 @@
 //============================================================================
-//  fx68k wrapper: two-phase enables from a /4 clock enable, a simple
-//  request/acknowledge bus for the board decoders, and autovectored
-//  interrupts (the X Board ties VPA low for interrupt acknowledge cycles).
+//  fx68k wrapper: two-phase enables supplied by the board (this board runs
+//  the 68000s at clk_sys/8 = 6.2937 MHz on Hang-On and at a fractional
+//  10 MHz on the sharrier/enduror/shangon* sets, so the enable pattern is
+//  the core's business), a simple request/acknowledge bus for the board
+//  decoders, and autovectored interrupts.
 //
-//  clk_sys 50 MHz, CPU 12.5 MHz: enPhi1 on phase 0, enPhi2 on phase 2.
 //  Bus contract towards the board:
 //    bus_valid   high from the clk after ASn falls until ASn rises
 //    bus_start   one-clk pulse on the first bus_valid clk (decoders sample)
@@ -11,13 +12,14 @@
 //    bus_ack     board asserts (level) when read data is valid / write taken;
 //                DTACKn follows it until ASn negates
 //  Interrupt acknowledge cycles (FC = 7) are autovectored via VPAn and are not
-//  presented to the board.
+//  presented to the board; iack marks them so the core can clear a held
+//  interrupt line (MAME's irq4_line_hold), with the level on bus_addr[3:1].
 //============================================================================
 module sh_m68k_bus (
     input             clk,
     input             reset,           // sync reset (also pwrUp)
-    input             ce_phase,        // /4 phase counter bit pattern supplied outside
-    input       [1:0] phase,
+    input             enphi1,          // fx68k phase enables: one-clock pulses,
+    input             enphi2,          //   strictly alternating, never together
 
     input       [2:0] ipl,             // active-high level (0..7), encoded
     input             halt_n,          // 0 = hold the CPU (bus request grant from the other CPU)
@@ -33,14 +35,15 @@ module sh_m68k_bus (
     input             bus_ack,
 
     output            reset_out,       // 1 while the CPU executes RESET (drives /RESET to peripherals)
+    output            iack,            // interrupt acknowledge cycle in progress (level on bus_addr[3:1])
 
     // trace (sim)
     output      [2:0] fc,
     output            bus_as_n         // raw AS (interrupt acknowledge cycles too)
 );
 
-wire en1 = ce_phase && (phase == 2'd0);
-wire en2 = ce_phase && (phase == 2'd2);
+wire en1 = enphi1;
+wire en2 = enphi2;
 
 wire ASn, UDSn, LDSn, eRWn, VPAn_unused, E, VMAn, BGn, oRESETn, oHALTEDn;
 wire FC0, FC1, FC2;
@@ -50,7 +53,7 @@ wire [23:1] eab;
 assign fc = {FC2, FC1, FC0};
 assign bus_as_n = ASn;
 assign reset_out = ~oRESETn;
-wire iack = (fc == 3'b111);
+assign iack = (fc == 3'b111) && !ASn;
 
 // autovector: VPAn low during interrupt acknowledge; DTACK from the board
 wire vpa_n   = ~(iack && !ASn);
