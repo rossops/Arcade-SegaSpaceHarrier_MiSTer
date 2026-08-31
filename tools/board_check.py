@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from romsets import ROMSETS
 from models import tilemap_hangon as tm
 from models import road_hangon as rd
+from models import sprite_hangon as sp
 from models import palette5242 as pal
 
 ZIPDIR = "/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)"
@@ -40,7 +41,18 @@ def main(outdir, frame, setname="hangon"):
     roadram = load_words(os.path.join(outdir, "rtl_roadram.bin"))
     roadrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["road"][1][0][0]][0])
     road, ply = rd.render(roadram, rd.decode(roadrom))
-    idx, mark = rd.mix(road, ply, fg, bg, tx)
+    spriteram = load_words(os.path.join(outdir, "rtl_spriteram.bin"))
+    sprrom = []
+    files = rs["regions"]["sprite"][1]
+    for i in range(0, len(files), 2):
+        even = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i][0]][0])
+        odd = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i + 1][0]][0])
+        sprrom.extend((even[j] << 8) | odd[j] for j in range(len(even)))
+    sprrom.extend([0] * (0x8000 * rs["spr_banks"] - len(sprrom)))
+    zoomrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["zoom"][1][0][0]][0])
+    spr = sp.draw(spriteram, sprrom, zoomrom, rs["spr_banks"])
+    shade_hilight = not (pb & 0x40)
+    idx, bank = sp.mix_full(road, ply, fg, bg, tx, spr, shade_hilight)
     img = Image.open(os.path.join(outdir, f"frame_{frame:04d}.ppm")).convert("RGB")
     assert img.size == (320, 224), img.size
     match = 0
@@ -48,7 +60,7 @@ def main(outdir, frame, setname="hangon"):
     out = Image.new("RGB", (320, 224))
     for y in range(224):
         for x in range(320):
-            rgb = pal.entry_rgb(palram[idx[y][x]]) if disp else (0, 0, 0)
+            rgb = pal.entry_rgb_bank(palram[idx[y][x]], bank[y][x]) if disp else (0, 0, 0)
             out.putpixel((x, y), rgb)
             if img.getpixel((x, y)) == rgb:
                 match += 1

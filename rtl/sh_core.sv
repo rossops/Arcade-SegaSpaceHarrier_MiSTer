@@ -59,7 +59,6 @@ module sh_core (
 );
 
 // idle until their milestones
-assign p2_req = 1'b0;  assign p2_addr = '0;
 assign p5_req = 1'b0;  assign p5_addr = '0;
 assign p6_req = 1'b0;  assign p6_addr = '0;
 assign audio_l = '0;
@@ -226,14 +225,15 @@ sh_dpram #(.AW(11)) textram (.clk(clk_sys), .a_addr(ma[11:1]), .a_din(m_dout), .
     .b_clk(clk_sys), .b_addr(tm_text_addr), .b_dout(tm_text_q));
 sh_dpram #(.AW(10)) spriteram (.clk(clk_sys), .a_addr(ma[10:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_spr && m_start), .a_dout(spr_q),
-    .b_clk(clk_sys), .b_addr(10'd0), .b_dout());
+    .b_clk(clk_sys), .b_addr(sp_cram_addr), .b_dout(sp_cram_q));
 // 2048 words of the 315-5242-style palette + resistor DAC (the hangon
 // shadow/hilight banks arrive with the sprites in M4; effects idle)
 sh_palette_5242 palette (
     .clk(clk_sys),
     .a_addr({2'b00, ma[11:1]}), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_pal && m_start), .a_dout(pal_q),
-    .b_addr(pal_b_addr), .b_effects(1'b0), .r(pal_r), .g(pal_g), .b(pal_b)
+    .b_addr(pal_b_addr), .b_effects(spr_shadow), .eff_force(eff_force),
+    .r(pal_r), .g(pal_g), .b(pal_b)
 );
 
 // ---- PPI0 (E00000): port A = sound latch (mode 1 strobed output, /OBF is
@@ -537,19 +537,51 @@ sh_road road (
     .road_pix(road_pix), .road_ply(road_ply)
 );
 
-// mixer, the M3 subset of segahang screen_update (sprites arrive in M4):
-// a PLYCONT-0 line puts the road under the tile layers; any other value
-// paints the road over bg and fg (MAME's foreground pass rewrites every
-// pixel of the line) with only text above. The per-pass priority marks
-// join in M4.
+// sprites: zoom PROM + the line renderer on sprite RAM's second port,
+// ROM from SDRAM p2
+wire [12:0] sp_zoom_addr; wire [7:0] sp_zoom_q;
+wire        zoom_brm = brm_wr && brm_addr >= OFF_ZOOM && brm_addr < OFF_MCU;
+sh_zoomrom zoomrom (
+    .clk(clk_sys),
+    .wr(zoom_brm), .wr_addr(13'(brm_addr - OFF_ZOOM)), .wr_data(brm_din),
+    .rd_addr(sp_zoom_addr), .q(sp_zoom_q)
+);
+wire  [9:0] sp_cram_addr; wire [15:0] sp_cram_q;
+wire [11:0] spr_pix;
+sh_sprite sprites (
+    .clk(clk_sys), .reset(reset), .numbanks(board_desc.spr_banks),
+    .line_start(line_start), .vcnt(vcnt), .ce_pix(ce_pix), .hcnt(hcnt),
+    .cram_addr(sp_cram_addr), .cram_q(sp_cram_q),
+    .zoom_addr(sp_zoom_addr), .zoom_q(sp_zoom_q),
+    .rom_req(p2_req), .rom_addr(p2_addr), .rom_dout(p2_dout), .rom_ack(p2_ack),
+    .spr_pix(spr_pix), .line_clocks(), .late_lines()
+);
+
+// the complete segahang screen_update: road passes and tile layers per
+// PLYCONT, sprites compared against the tile priority marks (the road
+// leaves no mark), only text above a winning sprite. A sprite pixel with
+// colour bits all ones is the shadow pen: the underlying pixel moves to
+// the shadow or hilight palette bank, picked by the PPI's SHADE0 bit
+// (MAME video_lamps_w: ~portB & 0x40 truthy selects hilight).
 wire        tx_op = tx_pix[2:0] != 3'd0;
 wire        fg_op = fg_pix[2:0] != 3'd0;
 wire        bg_op = bg_pix[2:0] != 3'd0;
 wire        road_under = (road_ply == 2'd0);
-wire [10:0] mix_idx = tx_op ? {5'd0, tx_pix[5:0]} :
-                      (road_under && fg_op) ? {1'b0, fg_pix[9:0]} :
-                      (road_under && bg_op) ? {1'b0, bg_pix[9:0]} :
-                      road_pix;
+wire  [3:0] mark = {tx_op,
+                    fg_op & fg_pix[10],
+                    (fg_op & ~fg_pix[10]) | (bg_op & bg_pix[10]),
+                    bg_op & ~bg_pix[10]};
+wire        spr_op = spr_pix[3:0] != 4'd0;
+wire  [3:0] sprlvl = 4'd1 << spr_pix[11:10];
+wire        spr_wins = spr_op && (sprlvl > mark);
+wire        spr_shadow = spr_wins && (spr_pix[9:4] == 6'h3F);
+wire        shade_hilight = ~pb0_out[6];
+wire  [1:0] eff_force = shade_hilight ? 2'd2 : 2'd1;
+wire [10:0] base_idx = tx_op ? {5'd0, tx_pix[5:0]} :
+                       (road_under && fg_op) ? {1'b0, fg_pix[9:0]} :
+                       (road_under && bg_op) ? {1'b0, bg_pix[9:0]} :
+                       road_pix;
+wire [10:0] mix_idx = (spr_wins && !spr_shadow) ? {1'b1, spr_pix[9:0]} : base_idx;
 wire [12:0] pal_b_addr = {2'b00, mix_idx};
 wire  [7:0] pal_r, pal_g, pal_b;
 

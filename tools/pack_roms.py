@@ -144,6 +144,10 @@ def main():
                 with open(os.path.join(a.hexdir, f"roadrom{pl}.hex"), "w") as f:
                     for byt in t[pl * 0x4000:(pl + 1) * 0x4000]:
                         f.write(f"{byt:02x}\n")
+        if "zoom" in regions:
+            with open(os.path.join(a.hexdir, "zoomrom.hex"), "w") as f:
+                for byt in regions["zoom"][:0x2000]:
+                    f.write(f"{byt:02x}\n")
     print(f"{a.out}: {len(stream)} bytes ({len(stream)/1048576:.2f} MB)")
 
 

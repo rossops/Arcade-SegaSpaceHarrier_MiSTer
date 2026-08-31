@@ -520,6 +520,30 @@ captures; the road renders from live shared road RAM with no
 buffering, so the per-consumer dump question stays quiet only because
 the attract writes road RAM during vblank (open question 9 stands).
 
+M4 findings (hangon). The sprite model closed the loop the milestone
+plan promised: with every layer composed, all six captures match MAME's
+screenshots on all 71,680 pixels — the first full-frame exactness with
+nothing excluded. One model bug found: set_local_origin(189, -1) means
+sprite rows land one screen line DOWN (screen y = row + 1); the first
+guess of -1 showed up as one-pen-off colours on the slanted logo art,
+and the palette index MAME actually displayed pinpointed it. The RTL
+renderer keeps MAME's row-base accumulator in word 7 of a private copy
+of sprite RAM, taken once per frame at line 260 (after the game's
+vblank list writes) with word 7 initialised from word 3, then walks
+the list per line, one source nibble per clock, ROM words from SDRAM
+p2 cached a 128-bit burst at a time. It is pixel-exact against the
+model on all six captures and the board is pixel-exact from its own
+dumps (sprite RAM dumped at the copy moment, per-consumer timing) at
+frames 120, 300 and 2400. Two RTL bugs found in review before any
+simulation (the colpri assembly and the header-read cadence) and one
+by Icarus that Verilator's x-assign had hidden: the renderer ran
+before the first list copy existed and X-poisoned its FSM — rendering
+now waits for the first copy. The shadow pen goes through the
+palette's new eff_force input (Hang-On's three-bank layout: SHADE0
+picks shadow or hilight globally, MAME's ~portB & 0x40 arithmetic
+selecting hilight when the bit is low). The Y Board's zoom-clamp open
+question does not apply here: this zoom ROM is shrink-only row-skip.
+
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and

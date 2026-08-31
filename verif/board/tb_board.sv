@@ -225,7 +225,8 @@ task automatic dump_ram(input string name, input integer words, input integer wh
             0: $fwrite(fd, "%c%c", core.tileram.mem[k][7:0], core.tileram.mem[k][15:8]);
             1: $fwrite(fd, "%c%c", core.textram.mem[k][7:0], core.textram.mem[k][15:8]);
             2: $fwrite(fd, "%c%c", core.palette.mem[k][7:0], core.palette.mem[k][15:8]);
-            default: $fwrite(fd, "%c%c", core.roadram.mem[k][7:0], core.roadram.mem[k][15:8]);
+            3: $fwrite(fd, "%c%c", core.roadram.mem[k][7:0], core.roadram.mem[k][15:8]);
+            default: $fwrite(fd, "%c%c", core.spriteram.mem[k][7:0], core.spriteram.mem[k][15:8]);
         endcase
     end
     $fclose(fd);
@@ -234,6 +235,12 @@ reg vb_dump_d;
 integer fppi;
 always @(posedge clk_sys) begin
     vb_dump_d <= vb;
+    // the sprite renderer copies its list at line 260. The tb frame
+    // counter increments at vb rise, so the vblank lines already carry
+    // the next frame's number: the copy with frame == N feeds visible
+    // frame N (per-consumer dump timing).
+    if (dumpframe >= 0 && frame == dumpframe && core.line_start && core.vcnt == 9'd260)
+        dump_ram("rtl_spriteram.bin", 1024, 4);
     if (dumpframe >= 0 && frame == dumpframe && vb && !vb_dump_d) begin
         dump_ram("rtl_tileram.bin", 8192, 0);
         dump_ram("rtl_textram.bin", 2048, 1);
@@ -244,6 +251,17 @@ always @(posedge clk_sys) begin
         $fclose(fppi);
         $display("dumped the video RAMs at the end of frame %0d", frame);
     end
+end
+
+// ---- sprite renderer budget: worst clocks per line and lines that were
+// still rendering at the next line_start (cumulative), every 100 frames
+reg [11:0] spr_worst;
+reg vb_spr_d;
+always @(posedge clk_sys) begin
+    vb_spr_d <= vb;
+    if (core.sprites.line_clocks > spr_worst) spr_worst <= core.sprites.line_clocks;
+    if (vb && !vb_spr_d && frame != 0 && (frame % 100 == 0))
+        $display("SPRLINE f=%0d worst clocks/line=%0d late lines so far=%0d", frame, spr_worst, core.sprites.late_lines);
 end
 
 // ---- audio: 48 kHz stereo, raw little-endian 16-bit (audio.raw)

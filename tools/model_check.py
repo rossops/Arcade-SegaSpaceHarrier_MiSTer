@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Render the tile, text and road layers from a MAME RAM dump with the
-Python models and compare the composed frame against MAME's screenshot.
-With the road in place the whole frame is compared; the remaining
-differences are sprites (M4), so the raw match statistic is reported and
-the gate sets the threshold per capture. Writes model.png next to the
-dump for eyeballing.
+"""Render every layer — tiles, text, road and sprites — from a MAME RAM
+dump with the Python models and compare the composed frame against MAME's
+screenshot, pixel for pixel. Writes model.png next to the dump.
 
     model_check.py verif/golden/hangon/f60 [hangon]
 """
@@ -15,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from romsets import ROMSETS
 from models import tilemap_hangon as tm
 from models import road_hangon as rd
+from models import sprite_hangon as sp
 from models import palette5242 as pal
 
 
@@ -45,14 +43,27 @@ def main(dumpdir, setname="hangon"):
     roadram = load_words(os.path.join(dumpdir, "roadram.bin"))
     roadrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["road"][1][0][0]][0])
     road, ply = rd.render(roadram, rd.decode(roadrom))
-    idx, mark = rd.mix(road, ply, fg, bg, tx)
+    spriteram = load_words(os.path.join(dumpdir, "spriteram.bin"))
+    sprrom = []
+    files = rs["regions"]["sprite"][1]
+    for i in range(0, len(files), 2):
+        even = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i][0]][0])
+        odd = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i + 1][0]][0])
+        sprrom.extend((even[j] << 8) | odd[j] for j in range(len(even)))
+    sprrom.extend([0] * (0x8000 * rs["spr_banks"] - len(sprrom)))
+    zoomrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["zoom"][1][0][0]][0])
+    spr = sp.draw(spriteram, sprrom, zoomrom, rs["spr_banks"])
+    # MAME video_lamps_w: m_shadow = ~portB & 0x40; truthy picks the
+    # hilight bank (palette base + 2*entries)
+    shade_hilight = not (pb & 0x40)
+    idx, bank = sp.mix_full(road, ply, fg, bg, tx, spr, shade_hilight)
     img = Image.open(os.path.join(dumpdir, "frame.png")).convert("RGB")
     assert img.size == (320, 224), img.size
     total = match = 0
     out = Image.new("RGB", (320, 224))
     for y in range(224):
         for x in range(320):
-            rgb = pal.entry_rgb(palram[idx[y][x]])
+            rgb = pal.entry_rgb_bank(palram[idx[y][x]], bank[y][x])
             out.putpixel((x, y), rgb)
             if img.getpixel((x, y)) == rgb:
                 match += 1

@@ -60,6 +60,18 @@ def entry_rgb(word, effects=False):
     return t[r], t[g], t[b]
 
 
+def entry_rgb_bank(word, bank):
+    """(r, g, b) with Hang-On's explicit 3-bank layout: 0 normal, 1 shadow,
+    2 hilight (hangon_paletteram_w ignores bit 15; the PPI's SHADE0 bit
+    picks the effect bank globally)."""
+    normal, shadow, hilight = tables()
+    r = ((word >> 12) & 1) | ((word << 1) & 0x1e)
+    g = ((word >> 13) & 1) | ((word >> 3) & 0x1e)
+    b = ((word >> 14) & 1) | ((word >> 7) & 0x1e)
+    t = (normal, shadow, hilight)[bank]
+    return t[r], t[g], t[b]
+
+
 if __name__ == "__main__":
     normal, shadow, hilight = tables()
     out = os.path.join(os.path.dirname(__file__), "..", "..", "rtl", "video", "sh_pal_lut.svh")

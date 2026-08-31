@@ -17,6 +17,9 @@ module sh_palette_5242 (
     // pixel
     input      [12:0] b_addr,
     input             b_effects,
+    input       [1:0] eff_force,    // 0 = word bit 15 picks hilight/shadow
+                                    // (315-5242); 1 = force shadow, 2 = force
+                                    // hilight (Hang-On's SHADE0 three-bank use)
     output reg  [7:0] r, g, b
 );
 `include "sh_pal_lut.svh"
@@ -74,9 +77,10 @@ end
 wire [4:0] r5 = {word[3:0],  word[12]};
 wire [4:0] g5 = {word[7:4],  word[13]};
 wire [4:0] b5 = {word[11:8], word[14]};
+wire hil = (eff_force == 2'd0) ? word[15] : eff_force[1];
 always @(posedge clk) begin
-    if (!eff_d)        begin r <= pal_normal(r5);  g <= pal_normal(g5);  b <= pal_normal(b5);  end
-    else if (word[15]) begin r <= pal_hilight(r5); g <= pal_hilight(g5); b <= pal_hilight(b5); end
-    else               begin r <= pal_shadow(r5);  g <= pal_shadow(g5);  b <= pal_shadow(b5);  end
+    if (!eff_d)   begin r <= pal_normal(r5);  g <= pal_normal(g5);  b <= pal_normal(b5);  end
+    else if (hil) begin r <= pal_hilight(r5); g <= pal_hilight(g5); b <= pal_hilight(b5); end
+    else          begin r <= pal_shadow(r5);  g <= pal_shadow(g5);  b <= pal_shadow(b5);  end
 end
 endmodule

@@ -48,7 +48,9 @@ on the X Board's `xb_tilemap_5197` shape), `verif/models/tilemap_hangon.py`,
 the rebuilt `tools/mame_capture.*`, `model_check.py` and `board_check.py`,
 and `verif/unit/tilemap/`. Added in M3: `rtl/video/sh_road.sv` and
 `sh_roadrom.sv` (the segaic16 road, HANGON/SHARRIER variant, from MAME's
-netlist emulation), `verif/models/road_hangon.py` and `verif/unit/road/`.
+netlist emulation), `verif/models/road_hangon.py` and `verif/unit/road/`. Added in M4:
+`rtl/video/sh_sprite.sv` and `sh_zoomrom.sv` (SEGA_HANGON_SPRITES as a
+line renderer), `verif/models/sprite_hangon.py` and `verif/unit/sprite/`.
 
 ## Carried over from the X Board core
 | Path | What it is |
