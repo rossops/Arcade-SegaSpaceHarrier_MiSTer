@@ -58,11 +58,7 @@ module sh_core (
     output     [23:1] trace_sub_addr,  output trace_sub_start,  output [2:0] trace_sub_fc
 );
 
-// idle until their milestones
-assign p5_req = 1'b0;  assign p5_addr = '0;
-assign p6_req = 1'b0;  assign p6_addr = '0;
-assign audio_l = '0;
-assign audio_r = '0;
+
 
 // ---------------------------------------------------------------- clocks
 // Hang-On runs both 68000s at clk_sys/8 = 6.2937 MHz (exact). The other
@@ -94,6 +90,29 @@ wire en2_8 = !pause && (ph8 == 3'd4);
 wire cpu10m = board_desc.cpu10m;
 wire enphi1 = cpu10m ? en1_f : en1_8;
 wire enphi2 = cpu10m ? en2_f : en2_8;
+
+// sound enables from an 8 MHz accumulator (10413/65536 * 50.3496 MHz =
+// 7.99991 MHz): ce_8m for the tv80 sim clock and the PCM tick divider,
+// every other pulse is the 4 MHz Z80 / YM2203 enable
+reg [15:0] acc8;
+reg        ce_8m, ce_4m, ph4;
+reg  [6:0] pcm_div;
+reg        pcm_tick;
+wire [16:0] acc8_sum = {1'b0, acc8} + 17'd10413;
+always @(posedge clk_sys) begin
+    ce_8m <= 1'b0; ce_4m <= 1'b0; pcm_tick <= 1'b0;
+    if (reset) begin acc8 <= 16'd0; ph4 <= 1'b0; pcm_div <= 7'd0; end
+    else begin
+        acc8 <= acc8_sum[15:0];
+        if (acc8_sum[16] && !pause) begin
+            ce_8m <= 1'b1;
+            ph4 <= ~ph4;
+            if (ph4) ce_4m <= 1'b1;
+            if (pcm_div == 7'd127) begin pcm_div <= 7'd0; pcm_tick <= 1'b1; end
+            else pcm_div <= pcm_div + 7'd1;
+        end
+    end
+end
 
 reg [5:0] adc_div;
 reg       ce_adc;
@@ -254,25 +273,22 @@ wire display_enable = pb0_out[4];
 wire z80_run        = pb0_out[5];
 // port C: 2:1 tilemap column/row scroll enables (M2), 0 mute (M5)
 
-// ---- Z80 stand-in: consumes the sound latch so the mode-1 handshake
-// completes (the real Z80's port-40 read arrives in M5). It waits ~2 us
-// after /OBF falls, then pulses /ACK for four clocks.
-reg [7:0] stub_wait;
-reg [1:0] stub_ackw;
-reg       stub_ack;
-assign stub_ack_n = ~stub_ack;
-always @(posedge clk_sys) begin
-    if (cpu_reset || !z80_run) begin stub_wait <= 8'd0; stub_ack <= 1'b0; stub_ackw <= 2'd0; end
-    else if (stub_ack) begin
-        stub_ackw <= stub_ackw + 2'd1;
-        if (stub_ackw == 2'd3) stub_ack <= 1'b0;
-    end
-    else if (!snd_obf_n) begin
-        stub_wait <= stub_wait + 8'd1;
-        if (stub_wait == 8'd100) begin stub_ack <= 1'b1; stub_ackw <= 2'd0; stub_wait <= 8'd0; end
-    end
-    else stub_wait <= 8'd0;
-end
+// ---- the YM2203 sound board (the 2151 and 2x2203 variants arrive in
+// M8). The Z80's port-40 latch read answers the PPI's mode-1 handshake.
+wire snd_read;
+assign stub_ack_n = ~snd_read;
+wire signed [15:0] snd_l, snd_r;
+sh_soundsys_2203 soundsys (
+    .clk(clk_sys), .reset(reset), .z80_reset_n(z80_run),
+    .ce_z80(ce_4m), .ce_z80x2(ce_8m), .ce_fm(ce_4m), .pcm_tick(pcm_tick),
+    .mute_n(pc0_out[0]), .pcm_bankmask(8'h70),
+    .snd_latch(pa0_out), .snd_nmi(~snd_obf_n), .snd_read(snd_read),
+    .zrom_req(p5_req), .zrom_addr(p5_addr), .zrom_dout(p5_dout), .zrom_ack(p5_ack),
+    .pcm_req(p6_req), .pcm_addr(p6_addr), .pcm_dout(p6_dout), .pcm_ack(p6_ack),
+    .audio_l(snd_l), .audio_r(snd_r)
+);
+assign audio_l = snd_l;
+assign audio_r = snd_r;
 
 // ---- PPI1 (E03000): port A = sub CPU control and ADC select, port C in =
 // ADC status (D6 = /INTR)

@@ -67,9 +67,12 @@ line renderer), `verif/models/sprite_hangon.py` and `verif/unit/sprite/`.
 | `rtl/audio/T80/` | Wallner/MikeJ/Sorgelig, via Meathax's System 32 core | as vendored | BSD-style |
 | `verif/board/tv80/` | tv80 (Guy Hutchison, opencores), simulation-only Z80 | as vendored | MIT-style |
 
-To be vendored when their milestones arrive: jt03 (YM2203, jotego, GPL-3)
-for M5; an MCS-51 core for M7; the FD1094 pieces (jtcores `cores/s16`, via
-the X Board core) for M9.
+Vendored in M5: `rtl/audio/jt03/` — the jt12 FM core subset that jt03
+(YM2203) needs, taken from Meathax's System 32 core's vendored jt12 tree
+(jotego/jt12, GPL-3), plus jotego's jt49 SSG (https://github.com/jotego/jt49
+at `47301ed51374d6d41db4db846b7643fecf75e417`, GPL-3). Still to vendor:
+an MCS-51 core for M7; the FD1094 pieces (jtcores `cores/s16`, via the
+X Board core) for M9.
 
 `sdram.sv` and `sh_fb_if.sv` descend from Meathax's Sega System 32 core
 (https://github.com/meathax/s32, GPL-3) by way of the X and Y Board cores.

@@ -3,7 +3,7 @@ ROOT := $(abspath ../..)
 SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
   rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv rtl/cpu/sh_m68k_bus.sv \
   rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
-  rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys.sv rtl/video/sh_palette_5242.sv \
+  rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys_2203.sv rtl/video/sh_palette_5242.sv \
   rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv rtl/video/sh_roadrom.sv rtl/video/sh_road.sv rtl/video/sh_zoomrom.sv rtl/video/sh_sprite.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv
 VFLAGS := -Wno-fatal -Wno-lint -Wno-style -Werror-PINMISSING -Wno-BLKANDNBLK -Wno-MULTIDRIVEN -Wno-UNOPTFLAT \
@@ -15,7 +15,7 @@ COIN ?= -1
 PLUSARGS ?=
 GAME ?= hangon
 
-EXTRA := $(wildcard $(ROOT)/rtl/audio/jt51/*.v) $(wildcard $(ROOT)/verif/board/tv80/*.v)
+EXTRA := $(wildcard $(ROOT)/rtl/audio/jt51/*.v) $(wildcard $(ROOT)/rtl/audio/jt03/*.v) $(wildcard $(ROOT)/verif/board/tv80/*.v)
 
 obj_dir/Vtb_board: $(addprefix $(ROOT)/,$(SRCS)) $(EXTRA) main.cpp
 	verilator $(VFLAGS) --cc --exe --build -j 4 $(addprefix $(ROOT)/,$(SRCS)) $(EXTRA) main.cpp -o Vtb_board

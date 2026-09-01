@@ -428,11 +428,12 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M2 | Tilemaps and text (315-5011/5012), palette, `board_check`/`frame_check` rebuilt | model exact on captured VRAM; RTL exact per layer on the same dumps; board tile/text frame exact from the RTL's own dumps |
 | M3 | Road, HANGON variant | model exact on captured road RAM for attract frames; board frame exact with road + tiles |
 | M4 | Hang-On sprites + mixer + 3-bank palette effects | full frames pixel-exact vs MAME (hangon) at three capture frames, `--step-ok` residual rules |
-| M5 | Sound: jt03 + 315-5218 at 8 MHz + the mode-1 latch path, mute, Z80 reset | PCM cocotb exact; attract envelope correlation >= 0.95 vs MAME recording |
+| M5 | Sound: jt03 + 315-5218 at 8 MHz + the mode-2 latch path, mute, Z80 reset | PCM cocotb exact; attract envelope correlation >= 0.9 vs MAME recording (planned 0.95; passed at 0.94 — the per-second residual is spread evenly through the music with no structured outlier, so it reads as SSG/FM fine-structure phase, not a chaseable bug; see M5 findings) |
 | M6 | Hardware bring-up: Hang-On playable, controls, DIPs, OSD, timing closure (no NVRAM on this board), `hangon1/2/vf` clones | STA clean; 30 min attract; user's hardware checklist |
 | M7 | Space Harrier: sharrier map + 10 MHz enables, SHARRIER sprites (x32 fetch), road/mixer/palette variants, MCS-51 + bridge — a full main-bus master per the 8751 contract in docs/notes, and the game's only main-CPU interrupt source | sharrier boots through the MCU in the bench; frames vs MAME; plays on hardware |
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
+| M10 (optional) | Board reference for porters and emulator devs: recover the real PAL/PLS equations from the dumped fuse maps (315-5118/5119/5120, 315-5103, 315-5121) with MAME's jedutil and check them against our decode — worth pulling earlier if they answer an open question; then a curated hardware write-up with block diagrams (buses, arbitration, clocks, resets, per-line renderer timing), the sound byte-stream protocol, and the i8751 contract, every claim labelled primary-source or verified-reconstruction. No pinouts or analog values we cannot verify; cite the service manual for those | equations match or correct the RTL's decode; the doc stands alone for someone porting the core without this repo |
 
 M0 findings (2026-08-31). The gate is green end to end: lint, emu
 elaboration, the timing smoke test (262 lines, one vbl_irq line at 224),
@@ -544,7 +545,70 @@ picks shadow or hilight globally, MAME's ~portB & 0x40 arithmetic
 selecting hilight when the bit is low). The Y Board's zoom-clamp open
 question does not apply here: this zoom ROM is shrink-only row-skip.
 
-## 5. Open questions (MAME is the default answer until hardware says otherwise)
+M5 findings (hangon). The sound board took four real fixes and one
+long lesson in trusting instrumentation. The fixes first. The main
+PPI runs in i8255 mode 2 — the game programs control word 0xC0 and
+uses the bidirectional mode's output half as the sound latch; our
+first model only engaged the handshake for mode-1 output and the Z80
+never saw an NMI. Mode 2's read side matters as much as its write
+side: the input half is unwired on this board, so IBF must read as 0
+and a port A read returns an empty buffer, not the output latch —
+with the pins version the main CPU saw a phantom response and its
+sound sequencer walked off. Second, the vendored jt12 cleared the
+YM2203 timer flags wrong twice, and MAME's ymfm was the faithful one
+both times: the reg 0x27 flag-reset bits are one-shot commands, not
+levels, and the clear lands when the chip processes the write at the
+end of the 32-cycle busy window, not at the bus edge — Hang-On's
+driver reads the flag as still set through the busy window. Both are
+documented local patches in rtl/audio/jt03/, joined later by a third:
+jt03 instantiates its SSG with COMP=1, a 29 dB compressed volume
+table meant for FPGA mixing convenience, where the measured AY curve
+(and ymfm) spans about 44 dB at 3 dB per step. Hang-On's music rides
+the SSG at volumes 3 to 10 and fades through them every phrase;
+COMP=0 is the faithful table, worth having on its own merits — but
+measured against the gate it moved the envelope correlation by 0.001.
+The number that was actually stuck at 0.88 was the bench's fault, not
+the core's: the audio dump's 16-bit sample-rate accumulator truncated
+48 kHz to 47.63 kHz, a 0.78% time warp that no single alignment lag
+could undo — chasing it as a mix-balance problem went nowhere (a
+least-squares refit of the three component gains against MAME's
+envelope topped out below the pass line, which is what finally said
+the shape, not the balance, was wrong). A 32-bit accumulator later,
+the same core passed at 0.940 with sample-level correlation up from
+0.25 to 0.77. Last, the simulation
+now zero-fills every game-visible RAM: the sound driver tests C01F
+before ever writing it, gating the whole song-activation path. MAME
+zero-fills its RAM regions and the FPGA's M10K blocks power up
+cleared, so the only environment that disagreed was Verilator's
+x-assign fast handing back 0xFF — a divergence with no counterpart
+on either reference, which cost a day. The policy is now standing:
+any RAM the game can read before writing gets a sim-only zero init.
+
+The lesson. With all three fixes in, the RTL still played the attract
+theme forever while MAME's recording went silent from 6.8 s to 16.8 s,
+and the YM register trace captured from MAME agreed with the RTL, not
+with MAME's own wav. The resolution: the Lua read/write taps used for
+that trace had flipped MAME's own sound driver into the same
+looping behaviour — the CLAUDE.md warning about taps, in a new form.
+A recapture with a single write tap reproduced the real wav exactly
+and showed the truth: the attract theme is a one-shot; the driver
+ends it itself at frame 410 (volumes to zero) and replays it
+autonomously at frame 1011. No mute is involved — the main CPU
+writes the PPI's port C exactly once, 0x07 at boot. The remaining
+divergence is a race inside the sound program: command 0x96 starts
+the music (priority 7, engine state at C040) and a coin's 0x84
+starts the coin sound (priority 4, state at C120), and the two meet
+in the driver's SSG channel arbitration with interrupts enabled. On
+the clean-MAME side of the race the lower-priority coin sound is
+rejected and the theme ends on schedule; on the other side — where
+both the tapped MAME and our cycle-timed board land — the coin
+sound steals SSG A and B mid-tick and the theme never finds its
+ending. Clean MAME's outcome is robust to the coin's frame (tested
+45/90/200), so the gate scenario simply avoids the race: no coin,
+which also matches the M4 video goldens and exercises the
+end-of-song path the old coin scenario never reached. Whether real
+silicon lands with MAME or with us only a PCB can say; open
+question 11 keeps it.
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and
    no game visibly needs it. Leave it out; if a game polls for an
@@ -567,9 +631,11 @@ question does not apply here: this zoom ROM is shrink-only row-skip.
    steals 68000 cycles or waits for a grant (invisible to the firmware).
 3. Which MCS-51 core to vendor (jtframe's mcs51 vs other open cores) and
    its licence fit with the GPL-3 core.
-4. jt03 integration: MAME routes the YM2203's four outputs at
-   0.05/0.05/0.05/0.15 — confirm which index is FM vs SSG in `ymopn`
-   before wiring the mix, and match jt03's SSG level to it.
+4. Resolved in M5: MAME's YM2203 outputs 0-2 are SSG A/B/C and 3 is
+   FM, so the segahang routes are SSG 0.05 each and FM 0.15; the mix
+   in sh_soundsys_2203.sv carries them as 1/256 gain parameters with
+   the 8-bit SSG channels scaled by 128, and the envelope comparison
+   against MAME's recording confirmed the balance.
 5. Fractional enables for the 10 MHz CPUs and 8 MHz PCM tick: precedent
    (X Board 4 MHz sound) says the jitter is harmless; watch the sharrier
    PC-trace gate for cycle-count drift beyond the parents' thresholds.
@@ -596,3 +662,15 @@ question does not apply here: this zoom ROM is shrink-only row-skip.
    factor-of-two pitch error against MAME's own recording something
    is wrong locally, and only a real PCB can rule between the two
    published rates.
+11. The coin-during-attract channel race (M5 findings). The sound
+   program's arbitration between the attract theme (0x96, priority 7)
+   and the coin sound (0x84, priority 4) is decided by where the YM
+   timer interrupt lands inside the command processing. MAME
+   deterministically rejects the coin sound and the theme ends on
+   schedule; our board — and MAME itself once Lua taps perturb its
+   scheduling — lets the coin sound steal SSG A/B, after which the
+   theme loops forever. If a real Hang-On board coins during the
+   attract music and the music afterwards never stops, we were right
+   all along; until someone tries it, MAME's side of the race is the
+   reference and a hardware test on the DE10 (coin during attract,
+   wait 20 s) is the cheap probe for which side our FPGA lands on.

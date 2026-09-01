@@ -59,8 +59,8 @@ async def random_traffic(dut):
     for t in range(2000):
         op = rng.randrange(10)
         if op == 0:
-            # mode set: group A mode 0 or 1, random directions
-            cw = 0x80 | (rng.randrange(2) << 5) | (rng.randrange(2) << 4) | \
+            # mode set: group A mode 0, 1 or 2 (hangon uses 2), random dirs
+            cw = 0x80 | (rng.randrange(4) << 5) | (rng.randrange(2) << 4) | \
                  (rng.randrange(2) << 3) | (rng.randrange(2) << 1) | rng.randrange(2)
             m.write(3, cw)
             await strobe_write(dut, 3, cw)

@@ -56,6 +56,7 @@ emu.register_frame_done(function()
         dump(main, 0x110000, 0x800,  outdir .. "/paletteram.bin")
         dump(main, 0x130000, 0x800,  outdir .. "/spriteram.bin")
     else
+        dump(main, 0x20C000, 0x2000, outdir .. "/workram.bin")
         dump(main, 0x400000, 0x2000, outdir .. "/tileram.bin")
         dump(main, 0x410000, 0x800,  outdir .. "/textram.bin")
         dump(main, 0xA00000, 0x800,  outdir .. "/paletteram.bin")

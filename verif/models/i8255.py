@@ -1,10 +1,11 @@
 """i8255 PPI, the subset this board uses, matching MAME i8255.cpp where the
 two describe the same thing: mode 0 in/out on all ports (a read of an output
 port returns its latch, a write to an input port only updates the latch),
-BSR on port C, and mode 1 strobed OUTPUT on group A (/OBF on PC7, /ACK in on
-PC6, INTE via BSR of PC6, INTR on PC3). A control-word write clears the
-latches and the handshake state. Mode 2 and strobed input are not modelled
-(not on this board); a mode-set asking for them behaves as mode 0.
+BSR on port C, and the strobed OUTPUT handshake on group A — engaged by
+mode 1 output (bits 6:5 = 01, A out) or mode 2 (bit 6 set; hangon programs
+0xC0 and uses only the output half): /OBF on PC7, /ACK in on PC6, INTE via
+BSR of PC6, INTR on PC3. A control-word write clears the latches and the
+handshake state. Mode 2's input half and strobed input are not modelled.
 """
 
 
@@ -16,6 +17,7 @@ class I8255:
         self.latch_a = self.latch_b = self.latch_c = 0
         self.dir_a = self.dir_b = self.dir_cl = self.dir_cu = 1   # 1 = input
         self.mode1_a = False
+        self.mode2_a = False
         self.obf_n = 1
         self.inte = 0
         self.intr = 0
@@ -44,7 +46,8 @@ class I8255:
             self.latch_c = data
         else:
             if data & 0x80:
-                self.mode1_a = ((data >> 5) & 3) == 1 and not (data & 0x10)
+                self.mode1_a = (((data >> 5) & 3) == 1 and not (data & 0x10)) or bool(data & 0x40)
+                self.mode2_a = bool(data & 0x40)
                 self.dir_a = (data >> 4) & 1
                 self.dir_cu = (data >> 3) & 1
                 self.dir_b = (data >> 1) & 1
@@ -63,13 +66,18 @@ class I8255:
 
     def read(self, addr):
         if addr == 0:
+            if self.mode2_a:
+                return 0x00        # empty mode-2 input buffer (MAME's tri)
             return self.in_a if self.dir_a else self.latch_a
         if addr == 1:
             return self.in_b if self.dir_b else self.latch_b
         if addr == 2:
             pins = ((self.in_c if self.dir_cu else self.latch_c) & 0xF0) | \
                    ((self.in_c if self.dir_cl else self.latch_c) & 0x0F)
-            if self.mode1_a:
+            if self.mode2_a:
+                pins = (pins & 0x07) | (self.obf_n << 7) | (self.inte << 6) | \
+                       ((self.latch_c >> 4 & 1) << 4) | (self.intr << 3)
+            elif self.mode1_a:
                 pins = (pins & 0x37) | (self.obf_n << 7) | (self.inte << 6) | (self.intr << 3)
             return pins
         return 0xFF   # control register reads FF on the 8255A

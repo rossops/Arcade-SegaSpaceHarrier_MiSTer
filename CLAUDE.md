@@ -59,7 +59,11 @@ every convention below, and their git history shows what each decision cost.
 - The plan is `docs/DESIGN.md`: hardware reference from MAME, memory
   placement, module list, milestones with a pass criterion and a gate
   script each (`verif/board/check_mN.sh`), open questions. Start at M0.
-  Update the README status table as milestones close.
+  Update the README status table as milestones close, and keep the
+  README's "Core vs MAME" section current: every place the core matches
+  MAME exactly, deliberately differs toward the hardware, or where a bug
+  showed which of the two was right, gets an entry when it happens (the
+  user's standing request, 2026-08-31).
 - Every custom chip gets a Python golden model ported from MAME, a cocotb
   unit test, and a place in the Verilator board bench that dumps frames to
   diff against MAME captures. Unit benches are not enough for board-level

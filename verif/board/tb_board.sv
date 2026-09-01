@@ -226,7 +226,8 @@ task automatic dump_ram(input string name, input integer words, input integer wh
             1: $fwrite(fd, "%c%c", core.textram.mem[k][7:0], core.textram.mem[k][15:8]);
             2: $fwrite(fd, "%c%c", core.palette.mem[k][7:0], core.palette.mem[k][15:8]);
             3: $fwrite(fd, "%c%c", core.roadram.mem[k][7:0], core.roadram.mem[k][15:8]);
-            default: $fwrite(fd, "%c%c", core.spriteram.mem[k][7:0], core.spriteram.mem[k][15:8]);
+            4: $fwrite(fd, "%c%c", core.spriteram.mem[k][7:0], core.spriteram.mem[k][15:8]);
+            default: $fwrite(fd, "%c%c", core.work_ram.mem[k][7:0], core.work_ram.mem[k][15:8]);
         endcase
     end
     $fclose(fd);
@@ -246,6 +247,7 @@ always @(posedge clk_sys) begin
         dump_ram("rtl_textram.bin", 2048, 1);
         dump_ram("rtl_paletteram.bin", 2048, 2);
         dump_ram("rtl_roadram.bin", 2048, 3);
+        dump_ram("rtl_workram.bin", 8192, 5);
         fppi = $fopen("rtl_ppi.txt", "w");
         $fwrite(fppi, "%0d\n%0d\n%0d\n", core.pb0_out, core.pc0_out, core.display_enable);
         $fclose(fppi);
@@ -264,15 +266,127 @@ always @(posedge clk_sys) begin
         $display("SPRLINE f=%0d worst clocks/line=%0d late lines so far=%0d", frame, spr_worst, core.sprites.late_lines);
 end
 
+// ---- sound path trace: the first few latch bytes, YM2203 and PCM
+// register writes, and a once-per-second Z80 PC sample
+integer snd_n = 0, ym_n = 0, pcmw_n = 0, ppi_n = 0, rd_n_cnt = 0, ppird_n = 0;
+integer fstream;
+initial fstream = $fopen("sndstream.txt", "w");
+integer fzram;
+always @(posedge clk_sys) begin
+    if (frame == 23 && core.line_start && core.vcnt == 9'd100) begin
+        fzram = $fopen("z80ram.bin", "wb");
+        for (integer zk = 0; zk < 1024; zk = zk + 1)
+            $fwrite(fzram, "%c", core.soundsys.ram[zk]);
+        $fclose(fzram);
+    end
+end
+integer fzpc;
+reg [15:0] zpc_last;
+initial begin fzpc = $fopen("z80pc.txt", "w"); zpc_last = 16'hFFFF; end
+always @(posedge clk_sys) begin
+    if (!core.soundsys.z_m1_n && !core.soundsys.z_mreq_n && !core.soundsys.z_rd_n
+        && core.soundsys.z_addr != zpc_last && frame >= 9 && frame <= 24) begin
+        zpc_last <= core.soundsys.z_addr;
+        $fwrite(fzpc, "%04x\n", core.soundsys.z_addr);
+    end
+end
+integer fym;
+reg [7:0] ym_sel;
+initial fym = $fopen("ymtrace.txt", "w");
+always @(posedge clk_sys) begin
+    if (core.soundsys.ym_access && !core.soundsys.ym_cs_d) begin
+        if (core.soundsys.mem_wr) begin
+            if (!core.soundsys.z_addr[0]) ym_sel <= core.soundsys.z_dout;
+            else $fwrite(fym, "%0d W %02x %02x\n", frame, ym_sel, core.soundsys.z_dout);
+        end
+        else if (!core.soundsys.z_addr[0])
+            $fwrite(fym, "%0d R %02x\n", frame, core.soundsys.ym_dout);
+    end
+end
+integer fa_cnt = 0, fb_cnt = 0;
+reg fa_d, fb_d;
+always @(posedge clk_sys) begin
+    fa_d <= core.soundsys.ym.u_jt12.flag_A;
+    fb_d <= core.soundsys.ym.u_jt12.flag_B;
+    if (core.soundsys.ym.u_jt12.flag_A && !fa_d) fa_cnt = fa_cnt + 1;
+    if (core.soundsys.ym.u_jt12.flag_B && !fb_d) fb_cnt = fb_cnt + 1;
+    if (vb && !vb_d && (frame % 60) == 0)
+        $display("YMFLAGS f=%0d flagA_edges=%0d flagB_edges=%0d", frame, fa_cnt, fb_cnt);
+end
+always @(posedge clk_sys) begin
+    if (core.m_cs && core.m_sel_ppi0 && core.m_wr && core.m_be[0] && core.m_addr[2:1] == 2'd0)
+        $fwrite(fstream, "%0d %02x\n", frame, core.m_dout[7:0]);
+end
+integer lw_total = 0, lr_total = 0, drop_frames = 0, lw_f = 0, lr_f = 0;
+always @(posedge clk_sys) begin
+    if (core.m_cs && core.m_sel_ppi0 && core.m_wr && core.m_be[0] && core.m_addr[2:1] == 2'd0) begin
+        lw_total = lw_total + 1; lw_f = lw_f + 1;
+    end
+    if (core.soundsys.snd_read) begin lr_total = lr_total + 1; lr_f = lr_f + 1; end
+    if (vb && !vb_d) begin
+        if (lw_f != lr_f && drop_frames < 10) begin
+            drop_frames = drop_frames + 1;
+            $display("SNDDROP f=%0d wrote=%0d read=%0d", frame, lw_f, lr_f);
+        end
+        lw_f = 0; lr_f = 0;
+        if ((frame % 100) == 0) $display("SNDTOT f=%0d wrote=%0d read=%0d", frame, lw_total, lr_total);
+    end
+end
+always @(posedge clk_sys) begin
+    if (core.m_cs && core.m_sel_ppi0 && core.m_wr && core.m_be[0] && ppi_n < 20) begin
+        ppi_n = ppi_n + 1;
+        $display("PPI0WR f=%0d reg=%0d d=%02x", frame, core.m_addr[2:1], core.m_dout[7:0]);
+    end
+end
+reg obf_d;
+always @(posedge clk_sys) begin
+    obf_d <= core.snd_obf_n;
+    if (!core.snd_obf_n && obf_d && snd_n < 32) begin
+        snd_n = snd_n + 1;
+        $display("SNDLATCH f=%0d %02x", frame, core.pa0_out);
+    end
+    if (core.soundsys.ym_access && !core.soundsys.ym_cs_d && core.soundsys.mem_wr && ym_n < 8) begin
+        ym_n = ym_n + 1;
+        $display("YMWR f=%0d a=%0d d=%02x", frame, core.soundsys.z_addr[0], core.soundsys.z_dout);
+    end
+    if (core.soundsys.pcm_access && !core.soundsys.pcm_cs_d && core.soundsys.mem_wr && pcmw_n < 8) begin
+        pcmw_n = pcmw_n + 1;
+        $display("PCMWR f=%0d a=%02x d=%02x", frame, core.soundsys.z_addr[7:0], core.soundsys.z_dout);
+    end
+    if (vb && !vb_d && (frame % 60) == 0)
+        $display("Z80PC f=%0d pc=%04x rstn=%b", frame, core.soundsys.z_addr, core.soundsys.z_rst_n);
+    if (core.soundsys.snd_read && rd_n_cnt < 12) begin
+        rd_n_cnt = rd_n_cnt + 1;
+        $display("SNDRD f=%0d byte=%02x obf=%b", frame, core.pa0_out, core.snd_obf_n);
+    end
+    if (core.m_cs && core.m_sel_ppi0 && !core.m_wr && core.m_be[0] && core.m_addr[2:1] == 2'd2 && ppird_n < 12) begin
+        ppird_n = ppird_n + 1;
+        $display("PPIC_RD f=%0d q=%02x", frame, core.ppi0_q);
+    end
+end
+
 // ---- audio: 48 kHz stereo, raw little-endian 16-bit (audio.raw)
 integer faud;
-reg [15:0] aud_acc;      // 48000/50.3496e6 -> 16-bit phase acc: 65536*0.000953 = 62.5
+reg [31:0] aud_acc;      // 48000/50.3496e6 * 2^32 = 4094540: a 16-bit
+                         // accumulator truncated this to 47.63 kHz and
+                         // the 0.78% time warp capped the M5 envelope
+                         // correlation at 0.88 no matter the mix
 reg aud_ovf;
 initial faud = $fopen("audio.raw", "wb");
+// +auddump: the three mixer sources as separate mono 16-bit streams at
+// the same 48 kHz ticks, for fitting the mix gains against MAME's wav
+integer fcomp = 0;
+initial if ($test$plusargs("auddump")) fcomp = $fopen("audcomp.raw", "wb");
+wire [15:0] comp_fm  = core.soundsys.fm_snd;
+wire [15:0] comp_pcm = core.soundsys.pcm_l;
+wire [15:0] comp_ssg = {core.soundsys.ssg_sum, 6'd0};
 always @(posedge clk_sys) begin
     if (!reset) begin
-        {aud_ovf, aud_acc} <= aud_acc + 16'd62;
+        {aud_ovf, aud_acc} <= {1'b0, aud_acc} + 33'd4094540;
         if (aud_ovf) $fwrite(faud, "%c%c%c%c", al[7:0], al[15:8], ar[7:0], ar[15:8]);
+        if (aud_ovf && fcomp) $fwrite(fcomp, "%c%c%c%c%c%c",
+            comp_fm[7:0], comp_fm[15:8], comp_ssg[7:0], comp_ssg[15:8],
+            comp_pcm[7:0], comp_pcm[15:8]);
     end
 end
 
