@@ -304,7 +304,8 @@ sh_core core (
     .ce_vid(ce_pix), .hs(hs), .vs(vs), .hb(hb), .vb(vb),
     .audio_l(aud_l), .audio_r(aud_r),
     .trace_main_addr(), .trace_main_start(), .trace_main_fc(),
-    .trace_sub_addr(), .trace_sub_start(), .trace_sub_fc()
+    .trace_sub_addr(), .trace_sub_start(), .trace_sub_fc(),
+    .dbg_snd_drop(), .dbg_pcm_drop(), .dbg_z80_crash()   // bench-side flags
 );
 
 assign AUDIO_L = aud_l;

@@ -77,3 +77,8 @@ verif/unit/bsprite/*.hex
 verif/unit/bsprite/*.vvp
 verif/unit/bsprite/*.txt
 DELETE_ME
+# Z80 unit benches (verif/unit/z80): Verilator builds and sweep outputs
+verif/unit/z80/obj*/
+verif/unit/z80/*.txt
+# SMB share leftovers
+.smbdelete*

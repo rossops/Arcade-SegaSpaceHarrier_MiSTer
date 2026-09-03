@@ -38,4 +38,11 @@ set_global_assignment -name QIP_FILE rtl/pll.qip
 set_global_assignment -name QIP_FILE rtl/cpu/fx68k/fx68k.qip
 set_global_assignment -name QIP_FILE rtl/audio/jt51/jt51.qip
 set_global_assignment -name QIP_FILE rtl/audio/jt03/jt03.qip
-set_global_assignment -name QIP_FILE rtl/audio/T80/T80.qip
+# the sound board's Z80 is tv80 (verif/board/tv80, shared with the bench). The vendored
+# T80 (rtl/audio/T80, VHDL) is not built: on the DE10 it lost sound-latch NMIs mid-race
+# and tv80 never did - docs/DESIGN.md, M6 findings. It stays for the bench's cross-check.
+set_global_assignment -name VERILOG_FILE verif/board/tv80/tv80_core.v
+set_global_assignment -name VERILOG_FILE verif/board/tv80/tv80_alu.v
+set_global_assignment -name VERILOG_FILE verif/board/tv80/tv80_mcode.v
+set_global_assignment -name VERILOG_FILE verif/board/tv80/tv80_reg.v
+set_global_assignment -name VERILOG_FILE verif/board/tv80/tv80s_cen.v

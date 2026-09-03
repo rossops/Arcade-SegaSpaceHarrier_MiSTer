@@ -27,7 +27,7 @@
 module tv80_core (/*AUTOARG*/
   // Outputs
   m1_n, iorq, no_read, write, rfsh_n, halt_n, busak_n, A, dout, mc,
-  ts, intcycle_n, IntE, stop,
+  ts, intcycle_n, IntE, stop, dbg,
   // Inputs
   reset_n, clk, cen, wait_n, int_n, nmi_n, busrq_n, dinst, di
   );
@@ -65,6 +65,11 @@ module tv80_core (/*AUTOARG*/
   output [7:0]  dout;     
   output [6:0]  mc;     
   output [6:0]  ts;     
+  // Sega Space Harrier core: state view for the sound debug overlay (T80 DBG layout)
+  output [15:0] dbg;
+  wire [2:0] dbg_mc = mcycle[0] ? 3'd1 : mcycle[1] ? 3'd2 : mcycle[2] ? 3'd3 : mcycle[3] ? 3'd4 : mcycle[4] ? 3'd5 : mcycle[5] ? 3'd6 : mcycle[6] ? 3'd7 : 3'd0;
+  wire [2:0] dbg_ts = tstate[0] ? 3'd0 : tstate[1] ? 3'd1 : tstate[2] ? 3'd2 : tstate[3] ? 3'd3 : tstate[4] ? 3'd4 : tstate[5] ? 3'd5 : 3'd6;
+  assign dbg = {NMI_s, NMICycle, IntCycle, Prefix, dbg_mc, dbg_ts, Halt_FF, BusAck, IntE_FF1, Auto_Wait_t1, No_BTR};
   output        intcycle_n;     
   output        IntE;           
   output        stop;           

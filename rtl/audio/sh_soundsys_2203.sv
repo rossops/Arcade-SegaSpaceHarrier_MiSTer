@@ -1,19 +1,20 @@
 //============================================================================
-//  The YM2203 sound board (hangon, sharrier, enduror1): Z80 (T80s) at
+//  The YM2203 sound board (hangon, sharrier, enduror1): Z80 (tv80) at
 //  4 MHz, YM2203 (jt03) at 4 MHz memory-mapped at D000, 315-5218 PCM at
-//  E000 ticking at 8 MHz/128 = 62.5 kHz, ROM 0000-7FFF, RAM C000-C7FF
+//  E000 ticking at 8 MHz/128 = 62.5 kHz, ROM 0000-7FFF in zero-wait BRAM
+//  (the PCB's private ROM; see the note at the ROM), RAM C000-C7FF
 //  (mirror 0800). The only port is 0x40 (mirror 3F): the sound latch read,
 //  which answers the main PPI's mode-1 handshake (/ACK empties /OBF, the
-//  Z80's NMI). INT comes from the YM2203's timers.
+//  Z80's NMI). INT comes from the YM2203's timers. The Z80 is tv80 on a
+//  clock enable (the T80 is a bench-only option, see below).
 //  Mix, from MAME's segahang routes with the ymfm rotation understood
 //  (outputs 0-2 = SSG A/B/C, 3 = FM): SSG 0.05 each, FM 0.15, PCM 0.40,
 //  as 1/256 gain parameters. The 8-bit SSG channels are scaled by 128
-//  into the 16-bit sum. Simulation builds use tv80 behind SH_Z80_TV80.
+//  into the 16-bit sum.
 //============================================================================
 import sh_pkg::*;
 
 module sh_soundsys_2203 #(
-    parameter [24:0] ROM_BASE = SDR_Z80_BASE,
     parameter [24:0] PCM_BASE = SDR_PCM_BASE,
     parameter        PCM_GAIN = 102,          // 0.40 * 256
     parameter        FM_GAIN  = 38,           // 0.15 * 256
@@ -33,12 +34,18 @@ module sh_soundsys_2203 #(
     input             snd_nmi,
     output            snd_read,     // pulse: Z80 read of port 0x40 (/ACK)
 
+    // loader: 16-bit stream words of the Z80 ROM (OFF_Z80-relative bytes)
+    input             zbrm_wr,
+    input      [14:0] zbrm_addr,
+    input      [15:0] zbrm_din,
+
     // SDRAM
-    output            zrom_req,  output [24:3] zrom_addr, input [63:0] zrom_dout, input zrom_ack,
     output            pcm_req,   output [24:1] pcm_addr,  input [15:0] pcm_dout,  input pcm_ack,
 
     output signed [15:0] audio_l,
-    output signed [15:0] audio_r
+    output signed [15:0] audio_r,
+    output            pcm_tick_lost, // debug: PCM engine missed a tick (SDRAM too slow)
+    output            z80_fetch_ram  // debug: opcode fetch outside the ROM (the program crashed)
 );
 
 wire [15:0] z_addr;
@@ -47,33 +54,56 @@ reg   [7:0] z_din;
 wire        z_mreq_n, z_iorq_n, z_rd_n, z_wr_n, z_m1_n;
 wire        ym_irq_n;
 wire        z_wait_n;
-wire        z_rst_n = ~reset & z80_reset_n;
+wire [15:0] z80_dbg;     // Z80 state (NMI latch, NMI/INT cycle, prefix, M-cycle, T-state...), bench logs only
+// The Z80 and jt03 reset asynchronously ("always @(posedge clk, posedge
+// rst)" / "negedge reset_n"), unlike every other block here, which samples
+// reset at the clock. The core's reset is a combinational OR that includes
+// the PLL's asynchronous lock output, so it is registered before it
+// reaches them: a register cannot glitch. (It was not the M6 sound crash -
+// that was the T80 itself, see the file header - but it is the rule for
+// every asynchronous-reset boundary from here on.)
+reg         z_rst_n = 1'b0;
+always @(posedge clk) z_rst_n <= ~reset & z80_reset_n;
 
-`ifdef SH_Z80_TV80
-// tv80 has no clock enable: derive a 4 MHz clock from the 8 MHz enable
-reg zclk;
-always @(posedge clk) if (reset) zclk <= 1'b0; else if (ce_z80x2) zclk <= ~zclk;
-tv80s z80 (
-    .reset_n(z_rst_n), .clk(zclk),
-    .wait_n(z_wait_n), .int_n(ym_irq_n), .nmi_n(~snd_nmi), .busrq_n(1'b1),
-    .m1_n(z_m1_n), .mreq_n(z_mreq_n), .iorq_n(z_iorq_n), .rd_n(z_rd_n), .wr_n(z_wr_n),
-    .rfsh_n(), .halt_n(), .busak_n(),
-    .A(z_addr), .di(z_din), .dout(z_dout)
-);
-`else
+wire        z_nmi_n;     // /NMI to the Z80: /OBF as a level, plus the edge insurance below
+
+
+`ifdef SH_Z80_T80
+// The vendored T80 (as the GHDL-converted netlist verif/board/t80/T80s_ghdl.v),
+// kept for the bench's cross-check only (make ... Z80=t80). On the DE10 this
+// core lost sound-latch NMIs mid-race - the M6 findings tell the whole
+// story - while tv80, below, never did; the same netlist is clean in
+// simulation and in every timing corner, so the cause is unexplained and
+// the core is simply not used on hardware.
 T80s z80 (
     .RESET_n (z_rst_n),
     .CLK     (clk),
     .CEN     (ce_z80),
     .WAIT_n  (z_wait_n),
     .INT_n   (ym_irq_n),
-    .NMI_n   (~snd_nmi),
+    .NMI_n   (z_nmi_n),
     .BUSRQ_n (1'b1),
     .M1_n    (z_m1_n), .MREQ_n(z_mreq_n), .IORQ_n(z_iorq_n), .RD_n(z_rd_n), .WR_n(z_wr_n),
     .RFSH_n  (), .HALT_n(), .BUSAK_n(),
     .OUT0    (1'b0),
-    .A       (z_addr), .DI(z_din), .DO(z_dout)
+    .A       (z_addr), .DI(z_din), .DO(z_dout),
+    .REG     (), .DIRSet(1'b0), .DIR(230'd0), .ISet_out(),  // save-state ports, unused
+    .DBG     (z80_dbg)
 );
+wire _unused_ce8 = ce_z80x2;
+`else
+// tv80 (Verilog) on the 4 MHz clock enable: tv80_core has always had one,
+// only its bus wrapper lacked it (verif/board/tv80/tv80s_cen.v). The
+// board bench runs this same core, so the simulated and the synthesised
+// sound board share their CPU bit for bit.
+tv80s_cen z80 (
+    .reset_n(z_rst_n), .clk(clk), .cen(ce_z80),
+    .wait_n(z_wait_n), .int_n(ym_irq_n), .nmi_n(z_nmi_n), .busrq_n(1'b1),
+    .m1_n(z_m1_n), .mreq_n(z_mreq_n), .iorq_n(z_iorq_n), .rd_n(z_rd_n), .wr_n(z_wr_n),
+    .rfsh_n(), .halt_n(), .busak_n(),
+    .A(z_addr), .di(z_din), .dout(z_dout), .dbg(z80_dbg)   // z80_dbg: state view for the bench's logs
+);
+wire _unused_ce8 = ce_z80x2;
 `endif
 
 wire mem_rd = ~z_mreq_n & ~z_rd_n;
@@ -84,18 +114,61 @@ wire sel_ram = (z_addr[15:12] == 4'hC);              // C000-C7FF (mirror 0800)
 wire sel_ym  = (z_addr[15:12] == 4'hD);              // D000-D001 (mirror 0FFE)
 wire sel_pcm = (z_addr[15:12] == 4'hE);              // E000-E0FF (mirror 0F00)
 
-// ---- ROM: 1 KB cache over SDRAM p5 (4-word bursts); the Z80 waits on a miss
-wire [15:0] rom_word;
-wire        rom_hit;
-wire [14:3] zc_addr;
-sh_rom_cache #(.AW(14), .LINES(128)) zcache (
-    .clk(clk), .reset(reset), .invalidate(reset),
-    .cpu_req(mem_rd && sel_rom), .cpu_addr(z_addr[14:1]),
-    .cpu_data(rom_word), .cpu_ack(rom_hit),
-    .rom_req(zrom_req), .rom_addr(zc_addr), .rom_data(zrom_dout), .rom_ack(zrom_ack)
-);
-assign zrom_addr = ROM_BASE[24:3] + {10'd0, zc_addr};
-assign z_wait_n  = !(mem_rd && sel_rom && !rom_hit);
+// NMI edge insurance. The 8255's /OBF drives /NMI as a level; the Z80 must
+// latch its falling edge. On the DE10 the T80 was seen, three times out of
+// three, with /NMI low, its NMI latch clear and the byte unread, while the
+// same netlist never drops an edge in simulation (M6 findings). Whatever
+// the physical cause, the protocol tolerates a late read (the 68000 waits
+// 53 us between bytes) but not a lost one. So if /OBF has been low for
+// 32 us - twice the Z80's worst measured latency - and the Z80 has not
+// fetched its NMI vector since the byte arrived, /NMI is pulsed high for
+// four clocks to hand the core a fresh edge. A Z80 that behaves never sees
+// it (retrig_cnt counts, for the bench).
+reg  [10:0] nmi_low_t;
+reg         nmi_seen, retrig;
+reg   [2:0] retrig_t;
+reg   [4:0] retrig_cnt;
+wire        nmi_vector = ~z_m1_n & mem_rd & (z_addr == 16'h0066);
+always @(posedge clk) begin
+    if (reset) begin nmi_low_t <= 11'd0; nmi_seen <= 1'b0; retrig <= 1'b0; retrig_t <= 3'd0; retrig_cnt <= 5'd0; end
+    else begin
+        if (!snd_nmi) begin nmi_low_t <= 11'd0; nmi_seen <= 1'b0; end          // /OBF high: nothing pending
+        else begin
+            if (nmi_vector) nmi_seen <= 1'b1;
+            if (nmi_low_t != 11'd1611) nmi_low_t <= nmi_low_t + 11'd1;         // 32 us at 50.35 MHz
+        end
+        if (retrig) begin
+            retrig_t <= retrig_t + 3'd1;
+            if (retrig_t == 3'd3) begin retrig <= 1'b0; nmi_low_t <= 11'd0; end
+        end
+        else if (snd_nmi && !nmi_seen && nmi_low_t == 11'd1611) begin
+            retrig <= 1'b1; retrig_t <= 3'd0;
+            if (retrig_cnt != 5'd31) retrig_cnt <= retrig_cnt + 5'd1;
+`ifdef SIMULATION
+            $display("NMIRETRIG: /NMI re-issued after 32 us without a vector fetch (z80 pc %04x)", z_addr);
+`endif
+        end
+    end
+end
+assign z_nmi_n = ~snd_nmi | retrig;
+assign z80_fetch_ram = ~z_m1_n & mem_rd & z_addr[15];
+
+// ---- ROM: the whole 32 KB window in BRAM, loaded from the stream. The
+// PCB's Z80 has private zero-wait ROM; the SDRAM cache this replaces
+// stalled the Z80 on in-game miss storms, and one stall longer than the
+// main CPU's ~33 us per-byte latch pacing (it checks /OBF once, counts a
+// drop at 20C460 and blindly overwrites) loses a latch byte: no new /OBF
+// edge, no NMI, and the 8-slot NMI coroutine shifts by one for good -
+// music dead, effects garbage, until the game next resets the Z80. The
+// BRAM restores the hardware's timing and removes the whole stall class.
+reg [15:0] zrom [0:16383];
+always @(posedge clk) if (zbrm_wr) zrom[zbrm_addr[14:1]] <= zbrm_din;
+`ifdef SIMULATION
+initial if ($test$plusargs("z80rom")) $readmemh("z80rom.hex", zrom);
+`endif
+reg [15:0] rom_word;
+always @(posedge clk) rom_word <= zrom[z_addr[14:1]];
+assign z_wait_n = 1'b1;
 
 // ---- work RAM 2 KB. The sim zero-fills it: the game tests bytes it
 // never wrote (C01F gates the whole song-activation path), MAME zero-
@@ -122,7 +195,7 @@ sh_segapcm_5218 #(.PCM_BASE(PCM_BASE)) pcm (
     .clk(clk), .reset(reset), .tick(pcm_tick), .bankmask(pcm_bankmask),
     .cs(pcm_access && !pcm_cs_d), .we(mem_wr), .addr(z_addr[7:0]), .din(z_dout), .dout(pcm_q),
     .rom_req(pcm_req), .rom_addr(pcm_addr), .rom_dout(pcm_dout), .rom_ack(pcm_ack),
-    .out_l(pcm_l), .out_r(pcm_r)
+    .out_l(pcm_l), .out_r(pcm_r), .tick_lost(pcm_tick_lost)
 );
 
 // ---- YM2203 (jt03), memory-mapped at D000/D001

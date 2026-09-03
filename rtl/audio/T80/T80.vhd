@@ -123,7 +123,9 @@ entity T80 is
 		DIRSet     : in  std_logic := '0';
 		DIR        : in  std_logic_vector(229 downto 0) := (others => '0'); -- Halt_FF, Alternate, WZ, IFF2, IFF1, IM, IY, HL', DE', BC', IX, HL, DE, BC, PC, SP, R, I, F', A', F, A
 		-- Prefix/instruction-set state: '00'=no prefix (clean save point)
-		ISet_out   : out std_logic_vector(1 downto 0)
+		ISet_out   : out std_logic_vector(1 downto 0);
+		-- Sega Space Harrier core: state-machine view for the sound debug overlay
+		DBG        : out std_logic_vector(15 downto 0)
 	);
 end T80;
 
@@ -1075,6 +1077,7 @@ begin
 	TS <= std_logic_vector(TState);
 	DI_Reg <= DI;
 	HALT_n <= not Halt_FF;
+	DBG <= NMI_s & NMICycle & IntCycle & Prefix & MCycle & std_logic_vector(TState) & Halt_FF & BusAck & IntE_FF1 & Auto_Wait_t1 & No_BTR;
 	BUSAK_n <= not BusAck;
 	IntCycle_n <= not IntCycle;
 	IntE <= IntE_FF1;

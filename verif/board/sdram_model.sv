@@ -64,6 +64,8 @@ reg [3:0] cur;
 reg       busy;
 reg [1:0] stretch;
 integer k;
+integer lat;   // +sdram_lat=N overrides LATENCY (ram clocks): how fast a board's SDRAM could be
+initial if (!$value$plusargs("sdram_lat=%d", lat)) lat = LATENCY;
 
 always @(posedge clk) begin
     if (init) begin
@@ -88,7 +90,7 @@ always @(posedge clk) begin
 
         if (!busy) begin
             if (pend != 0) begin
-                busy <= 1; cnt <= LATENCY;
+                busy <= 1; cnt <= lat[4:0];
                 cur <= pend[7] ? 4'd7 : pend[0] ? 4'd0 : pend[1] ? 4'd1 : pend[5] ? 4'd5 : pend[6] ? 4'd6 :
                        pend[8] ? 4'd8 : pend[3] ? 4'd3 : pend[4] ? 4'd4 : 4'd2;
             end

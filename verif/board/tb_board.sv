@@ -75,15 +75,31 @@ sh_core core (
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
     .brm_wr(1'b0), .brm_addr(27'd0), .brm_din(16'd0),
-    .p1_buttons({5'd0, 1'b0, test_sw, 1'b0, coin1, p1_start, 6'd0} | hold_now),
-    .stick_x(8'sd0), .stick_y(8'sd0), .throttle(8'h80),
+    .p1_buttons({5'd0, 1'b0, test_sw, 1'b0, coin1, p1_start, 6'd0} | hold_now | scr_btn),
+    .stick_x(scr_x), .stick_y(scr_y), .throttle(scr_thr),
     .stick_mode(2'd0), .ana_curve(2'd0), .ana_range(2'd0),
     .dsw_a(dsw_a), .dsw_b(dsw_b), .service(1'b0), .test(test_sw), .coin1(coin1), .coin2(1'b0),
     .r(r), .g(g), .b(b), .ce_vid(ce_pix), .hs(hs), .vs(vs), .hb(hb), .vb(vb),
     .audio_l(al), .audio_r(ar),
     .trace_main_addr(tm_addr), .trace_main_start(tm_start), .trace_main_fc(tm_fc),
-    .trace_sub_addr(ts_addr), .trace_sub_start(ts_start), .trace_sub_fc(ts_fc)
+    .trace_sub_addr(ts_addr), .trace_sub_start(ts_start), .trace_sub_fc(ts_fc),
+    .dbg_snd_drop(dbg_snd_drop), .dbg_pcm_drop(dbg_pcm_drop), .dbg_z80_crash(dbg_z80_crash)
 );
+// the sound board's sticky debug flags, logged the moment they set
+wire dbg_snd_drop, dbg_pcm_drop, dbg_z80_crash;
+reg  z80_crash_d;
+always @(posedge clk_sys) begin
+    z80_crash_d <= dbg_z80_crash;
+    if (core.snd_overwrite) $display("SNDOVR f=%0d line=%0d: latch byte %02x overwritten before the Z80 took it (z80 pc=%04x rst_n=%b nmi_pending=%b)",
+                                     frame, core.vcnt, core.pa0_out, core.soundsys.z_addr, core.soundsys.z_rst_n, core.soundsys.z80_dbg[15]);
+    if (core.pcm_tick_lost) $display("PCMLOST f=%0d: PCM tick while the engine was busy", frame);
+    if (dbg_z80_crash && !z80_crash_d) $display("Z80CRASH f=%0d: opcode fetch at %04x", frame, core.soundsys.z_addr);
+    // a Z80 reset with a latch byte still pending would leave /OBF low with
+    // no NMI edge to come: log every reset with the handshake state
+    z80_run_d <= core.z80_run;
+    if (!core.z80_run && z80_run_d) $display("Z80RST f=%0d obf_n=%b (byte %02x pending=%b)", frame, core.snd_obf_n, core.pa0_out, ~core.snd_obf_n);
+end
+reg z80_run_d;
 
 // ---- traces
 //  trace_*_rtl.txt : program-space word fetches (FC = 2 user / 6 supervisor)
@@ -186,6 +202,29 @@ initial begin
     if (!$value$plusargs("hold_from=%d", hold_from)) hold_from = -1;
 end
 wire [15:0] hold_now = (hold_from >= 0 && frame >= hold_from) ? hold_mask[15:0] : 16'd0;
+
+// ---- +script=<file>: scripted inputs, one row per change, applied from
+// that frame on: "frame buttons_hex stick_x stick_y throttle_hex"
+// (buttons in the J1 order above, stick signed decimal, throttle 80 = idle)
+integer scr_fd, scr_n = 0, scr_i = 0;
+integer scr_f [0:255]; integer scr_b [0:255]; integer scr_sx [0:255]; integer scr_sy [0:255]; integer scr_t [0:255];
+reg [15:0] scr_btn = 16'd0; reg signed [7:0] scr_x = 8'sd0, scr_y = 8'sd0; reg [7:0] scr_thr = 8'h80;
+string scr_name;
+initial begin
+    if ($value$plusargs("script=%s", scr_name)) begin
+        scr_fd = $fopen(scr_name, "r");
+        while (scr_n < 256 && $fscanf(scr_fd, "%d %h %d %d %h", scr_f[scr_n], scr_b[scr_n], scr_sx[scr_n], scr_sy[scr_n], scr_t[scr_n]) == 5) scr_n = scr_n + 1;
+        $fclose(scr_fd);
+        $display("SCRIPT %s: %0d rows", scr_name, scr_n);
+    end
+end
+always @(posedge clk_sys) begin
+    if (scr_i < scr_n && frame >= scr_f[scr_i]) begin
+        scr_btn <= scr_b[scr_i][15:0]; scr_x <= scr_sx[scr_i][7:0]; scr_y <= scr_sy[scr_i][7:0]; scr_thr <= scr_t[scr_i][7:0];
+        $display("SCRIPT f=%0d buttons=%04x stick=%0d,%0d throttle=%02x", frame, scr_b[scr_i][15:0], scr_sx[scr_i], scr_sy[scr_i], scr_t[scr_i][7:0]);
+        scr_i = scr_i + 1;
+    end
+end
 
 // ---- +test_from=N: hold the test switch (service mode) from frame N on
 integer test_from = -1;
@@ -329,7 +368,26 @@ always @(posedge clk_sys) begin
             $display("SNDDROP f=%0d wrote=%0d read=%0d", frame, lw_f, lr_f);
         end
         lw_f = 0; lr_f = 0;
-        if ((frame % 100) == 0) $display("SNDTOT f=%0d wrote=%0d read=%0d", frame, lw_total, lr_total);
+        if ((frame % 100) == 0) begin
+            $display("SNDTOT f=%0d wrote=%0d read=%0d", frame, lw_total, lr_total);
+            // the latch protocol's margin: the Z80 must read each byte before the
+            // 68000's next write; worst write-to-read latency vs shortest write gap
+            $display("SNDTIME f=%0d max_latency=%0d ns min_gap=%0d ns", frame, lat_max, gap_min);
+            lat_max = 0; gap_min = 0;
+        end
+    end
+end
+// main.cpp does not advance $time, so count clk_sys cycles (20 ns each)
+integer cyc = 0, lw_t = 0, lat_max = 0, gap_min = 0; reg lw_pending = 1'b0;
+always @(posedge clk_sys) begin
+    cyc = cyc + 1;
+    if (core.m_cs && core.m_sel_ppi0 && core.m_wr && core.m_be[0] && core.m_addr[2:1] == 2'd0) begin
+        if (lw_t != 0 && (gap_min == 0 || (cyc - lw_t) * 20 < gap_min)) gap_min = (cyc - lw_t) * 20;
+        lw_t = cyc; lw_pending = 1'b1;
+    end
+    if (core.soundsys.snd_read && lw_pending) begin
+        if ((cyc - lw_t) * 20 > lat_max) lat_max = (cyc - lw_t) * 20;
+        lw_pending = 1'b0;
     end
 end
 always @(posedge clk_sys) begin

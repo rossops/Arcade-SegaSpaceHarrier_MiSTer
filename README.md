@@ -22,11 +22,12 @@ the open questions; `docs/references.md` says where every file came from.
 | M3 | Road generator pixel-exact | done (2026-08-31) |
 | M4 | Hang-On sprites and mixer: full frames vs MAME | done (2026-08-31) |
 | M5 | YM2203 + PCM sound vs MAME recordings | done (2026-08-31) |
-| M6 | Hang-On playable on hardware | not started |
+| M6 | Hang-On playable on hardware | done (2026-09-03) |
 | M7 | Space Harrier (sharrier video, i8751) | not started |
 | M8 | Enduro Racer (FD1089B, YM2151 board) | not started |
 | M9 | Super Hang-On conversions | not started |
 | M10 | Board reference doc + recovered PAL equations (optional) | not started |
+| M11 | Enduro Racer 60 fps mode via OSD CPU overclock (optional) | not started |
 
 ## Core vs MAME
 
@@ -83,6 +84,18 @@ behind each entry.
 - MAME re-synchronises its scheduler on every access to the main PPI
   (`sync_ppi_w`) to keep the sound handshake ordered. A cycle-concurrent
   design needs no such hack; the handshake is just wires.
+- The board bench runs the FPGA's own Z80: the VHDL T80s converted to
+  Verilog with GHDL, so the simulated sound board and the synthesised
+  one share a CPU. The simulation-only tv80 it replaces turned out to be
+  the less faithful core; the attract audio's envelope correlation with
+  MAME rose from 0.94 to 0.97 the day the real one went in.
+- The Z80's ROM lives in zero-wait BRAM, not behind an SDRAM cache. The
+  parents' cached-SDRAM sound ROM was fine for their latch protocols,
+  but Hang-On's 68000 streams eight bytes a frame on a ~33 microsecond
+  budget and overwrites without waiting — one Z80 stall past the budget
+  desyncs the sound program until the game resets it. The PCB's private
+  ROM never stalls; in-game hardware crashes taught us to match it
+  (M6 findings).
 
 ### Where a bug taught us who was right
 
@@ -130,7 +143,29 @@ behind each entry.
   MAME's real output exactly. Trace with as few taps as possible and
   always check the instrumented run still matches the clean run's
   audio or video before trusting it.
-- The coin-during-attract race is genuinely undecided. Hang-On's
+- The PCM chip's register file has a real race MAME hides. Its
+  segapcm runs the stream up to the moment of every register write
+  before applying it, so a driver restarting a playing voice always
+  ends up with its new address. Our cycle-level engine spends tens of
+  clocks per channel between reading the address and writing it back,
+  and a Z80 write landing in that window used to be clobbered — the
+  voice played noise from the wrong place, and a looped engine note
+  did so until the game reloaded it. Hang-On's sound test reproduced
+  it by switching samples quickly. The engine now yields to the Z80's
+  write, which is what MAME's ordering amounts to (M6 findings).
+- The sound board's Z80 is tv80, not the T80 the parent cores carry.
+  On the DE10 the T80 lost sound-latch NMIs about once a minute in a
+  race - the coroutine the driver runs on shifted and the music died -
+  while the identical netlist ran the real protocol for a simulated
+  minute and a half without a fault, every timing corner was clean
+  with margin, and every input to the core was a register. tv80 on the
+  same clock enable never did it. The cause on the T80 side is
+  unexplained; the M6 findings record the whole bisection, including
+  the confident wrong diagnosis in the middle of it. The sound board's
+  reset is registered on the way in as well (the two vendored cores
+  reset asynchronously, everything else here samples reset at the
+  clock).
+- The coin-during-attract race is genuinely undecided.- The coin-during-attract race is genuinely undecided. Hang-On's
   sound program arbitrates the attract theme (priority 7) against the
   coin sound (priority 4) with interrupts enabled, and the outcome
   depends on where the YM timer interrupt lands. MAME lands on the

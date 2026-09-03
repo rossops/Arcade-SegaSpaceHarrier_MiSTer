@@ -1,0 +1,3 @@
+`verilator_config
+// generated netlist: not ours to lint
+lint_off -file "*/T80s_ghdl.v"

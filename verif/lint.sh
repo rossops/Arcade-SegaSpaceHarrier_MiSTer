@@ -3,7 +3,7 @@
 # waivers it needs). Run from the repo root: sh verif/lint.sh
 set -e
 cd "$(dirname "$0")/.."
-W="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-PROCASSINIT -Wno-IMPORTSTAR -Wno-PINCONNECTEMPTY -Wno-GENUNNAMED -DSH_Z80_TV80"
+W="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-PROCASSINIT -Wno-IMPORTSTAR -Wno-PINCONNECTEMPTY -Wno-GENUNNAMED"
 OWN="rtl/video/sh_video_timing.sv rtl/mem/sdram.sv rtl/mem/sh_rom_loader.sv rtl/mem/sh_dpram.sv \
   rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv \
   rtl/cpu/sh_rom_cache.sv rtl/audio/sh_segapcm_5218.sv rtl/video/sh_palette_5242.sv \

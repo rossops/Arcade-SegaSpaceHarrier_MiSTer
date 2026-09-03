@@ -94,6 +94,13 @@ always @(posedge clk) begin
                 sdr_wr_addr <= ma[24:1];
                 sdr_wr_din  <= ioctl_dout;
                 sdr_wr_be   <= 2'b11;
+                // the Z80 ROM also lands in the sound board's zero-wait
+                // BRAM; the stream layout is unchanged (dual write)
+                if (ioctl_addr >= OFF_Z80 && ioctl_addr < OFF_PCM) begin
+                    brm_wr   <= 1'b1;
+                    brm_addr <= ioctl_addr;
+                    brm_din  <= ioctl_dout;
+                end
             end
             else if (ioctl_addr < OFF_END) begin
                 brm_wr   <= 1'b1;

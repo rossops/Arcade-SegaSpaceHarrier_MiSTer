@@ -55,7 +55,14 @@ module sh_core (
 
     // executed-instruction traces for the board bench (one per 68000)
     output     [23:1] trace_main_addr, output trace_main_start, output [2:0] trace_main_fc,
-    output     [23:1] trace_sub_addr,  output trace_sub_start,  output [2:0] trace_sub_fc
+    output     [23:1] trace_sub_addr,  output trace_sub_start,  output [2:0] trace_sub_fc,
+
+    // debug, sticky until reset (the bench logs them): the main CPU
+    // overwrote a sound latch byte the Z80 had not taken (a missed NMI, the
+    // sound program's coroutine shifts) / the PCM engine missed a tick
+    output reg        dbg_snd_drop,
+    output reg        dbg_pcm_drop,
+    output reg        dbg_z80_crash  // the Z80 fetched an opcode outside its ROM
 );
 
 
@@ -278,15 +285,37 @@ wire z80_run        = pb0_out[5];
 wire snd_read;
 assign stub_ack_n = ~snd_read;
 wire signed [15:0] snd_l, snd_r;
+wire pcm_tick_lost, z80_fetch_ram;
+// a latch write while /OBF is still low (and not being acked this very
+// clock) is a byte the Z80 never sees: the 68000's writer checks once and
+// overwrites (its drop counter at 20C460 counts the same event)
+wire snd_overwrite = m_cs && m_sel_ppi0 && m_be[0] && m_wr && ma[2:1] == 2'd0 && !snd_obf_n && !snd_read;
+always @(posedge clk_sys) begin
+    if (reset) begin dbg_snd_drop <= 1'b0; dbg_pcm_drop <= 1'b0; dbg_z80_crash <= 1'b0; end
+    else begin
+        if (snd_overwrite) dbg_snd_drop <= 1'b1;
+        if (pcm_tick_lost) dbg_pcm_drop <= 1'b1;
+        if (z80_fetch_ram && z80_run) dbg_z80_crash <= 1'b1;
+    end
+end
 sh_soundsys_2203 soundsys (
     .clk(clk_sys), .reset(reset), .z80_reset_n(z80_run),
     .ce_z80(ce_4m), .ce_z80x2(ce_8m), .ce_fm(ce_4m), .pcm_tick(pcm_tick),
     .mute_n(pc0_out[0]), .pcm_bankmask(8'h70),
     .snd_latch(pa0_out), .snd_nmi(~snd_obf_n), .snd_read(snd_read),
-    .zrom_req(p5_req), .zrom_addr(p5_addr), .zrom_dout(p5_dout), .zrom_ack(p5_ack),
+    // the stream's Z80 slot is 64 KB (ROM + zero pad) but the BRAM is the
+    // 32 KB the Z80 can address: stop at 0x8000 or the pad half wraps the
+    // 15-bit address and zeroes the ROM just loaded (hardware-only - the
+    // bench loads this BRAM with $readmemh, never through the loader)
+    .zbrm_wr(brm_wr && brm_addr >= OFF_Z80 && brm_addr < OFF_Z80 + 27'h8000),
+    .zbrm_addr(15'(brm_addr - OFF_Z80)), .zbrm_din(brm_din),
     .pcm_req(p6_req), .pcm_addr(p6_addr), .pcm_dout(p6_dout), .pcm_ack(p6_ack),
-    .audio_l(snd_l), .audio_r(snd_r)
+    .audio_l(snd_l), .audio_r(snd_r), .pcm_tick_lost(pcm_tick_lost), .z80_fetch_ram(z80_fetch_ram)
 );
+// the Z80 ROM moved to BRAM; SDRAM p5 is free for the next consumer
+assign p5_req  = 1'b0;
+assign p5_addr = '0;
+wire _unused_p5 = &{1'b0, p5_dout, p5_ack};
 assign audio_l = snd_l;
 assign audio_r = snd_r;
 
@@ -305,7 +334,10 @@ wire sub_res = pa1_out[5];   // 1 = sub CPU held in reset
 
 // ---- inputs (E01000, four byte ports on A2:A1): hangon order SERVICE,
 // COINAGE, DSW, unused; sharrier swaps COINAGE/DSW up one (M7). Active low.
-wire [7:0] in_service = ~{2'b00, 1'b0, p1_buttons[6], service | p1_buttons[10],
+// bits 7:6 are the ride-on hangon2 foot switches (L then R); IPT_UNKNOWN
+// on every other set, so wiring them always changes nothing else
+wire [7:0] in_service = ~{p1_buttons[11], p1_buttons[12], 1'b0, p1_buttons[6],
+                          service | p1_buttons[10],
                           test | p1_buttons[9], coin2, coin1 | p1_buttons[7]};
 reg [7:0] inputs_q;
 always @* begin

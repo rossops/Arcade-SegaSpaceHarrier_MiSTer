@@ -434,6 +434,7 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
 | M10 (optional) | Board reference for porters and emulator devs: recover the real PAL/PLS equations from the dumped fuse maps (315-5118/5119/5120, 315-5103, 315-5121) with MAME's jedutil and check them against our decode — worth pulling earlier if they answer an open question; then a curated hardware write-up with block diagrams (buses, arbitration, clocks, resets, per-line renderer timing), the sound byte-stream protocol, and the i8751 contract, every claim labelled primary-source or verified-reconstruction. No pinouts or analog values we cannot verify; cite the service manual for those | equations match or correct the RTL's decode; the doc stands alone for someone porting the core without this repo |
+| M11 (optional, after M8) | Enduro Racer 60 fps mode: an opt-in OSD CPU-speed for both 68000s. Measured in MAME (2026-09-01, endurord attract demo): the game is vblank-synced but overruns frames under load, updating sprites and road on an irregular 1-2 frame cadence — a CPU-bound 60 fps engine, not a locked 30, so no ROM patch is needed, just headroom. The X Board's parked "CPU overclock" design carries over: bigger increments in the existing fractional clock-enable accumulators, both CPUs together, everything else (frame timing, sound, ADC, renderers, watchdog) at hardware rate. First step is re-measuring during real gameplay, where load is highest, in case anything is tied to a half-rate counter after all | sim: the update-cadence probe shows every-frame updates at the chosen speed in scenes that dropped frames at 10 MHz, with the sound handshake and watchdog undisturbed; hardware: the user's feel test on the DE10, default speed stays the PCB's 10 MHz |
 
 M0 findings (2026-08-31). The gate is green end to end: lint, emu
 elaboration, the timing smoke test (262 lines, one vbl_irq line at 224),
@@ -609,6 +610,247 @@ which also matches the M4 video goldens and exercises the
 end-of-song path the old coin scenario never reached. Whether real
 silicon lands with MAME or with us only a PCB can say; open
 question 11 keeps it.
+
+M6 findings (hangon + clones). Not the quiet milestone it first
+looked like. The user had already played Hang-On on the DE10 before
+M6 started and the build's timing was clean (worst setup slack
++0.375 ns, all TNS zero, 17,770 ALMs at 42%) — and then the
+hardware checklist earned its keep: half a minute or more into a
+race, inconsistently, the music died and new effects went wrong,
+video and controls untouched, everything recovering at race restart
+or game over. That recovery timing named the victim — those are the
+moments the game pulses the Z80's reset through port B bit 5. The
+main CPU's latch writer (0x3E76 in the Rev A program) explained the
+rest: it sends eight bytes a frame with a fixed ~33 microsecond
+delay between them, checks /OBF once without waiting, counts a miss
+in its own drop counter at 20C460 and blindly overwrites. An
+overwritten byte raises no new /OBF edge, so the Z80 misses an NMI —
+and the NMI handler is an eight-slot rotating coroutine, so one
+missed byte shifts every later byte one slot for good. On the PCB
+this never happens: the Z80 runs from private zero-wait ROM and
+always makes the budget. Our Z80 ran through a 1 KB cache over
+SDRAM, the one component able to stall it unboundedly, and the only
+one of these boards where that matters — the parents' sound latches
+are not a hard-real-time stream. Forty-five seconds of simulated
+racing (coin, start, half throttle) produced zero dropped bytes, so
+the logic is sound at nominal timing and the failure lives in the
+physical margin of the cache path (its fill logic placed in MLABs,
+the same read-marginality class that bit the Y Board's DDR3 data).
+The fix removes the class instead of arguing with it: the full
+32 KB Z80 window now lives in stream-loaded BRAM, zero-wait like
+the real board, the cache and its wait states deleted and SDRAM p5
+freed. The M5 audio gate repeats its 0.942 exactly on the new path.
+One self-inflicted casualty along the way is worth recording: a
+Makefile edit that redirected output through a leftover symlink
+truncated the golden z80.hex to nothing, and the resulting
+silent-audio gate failure briefly looked like the fix was broken —
+check the artifact, not the exit code, and never write through a
+path a previous run may have left as a symlink.
+
+The BRAM fix then shipped broken, and the way it broke is the more
+useful lesson. On the DE10 the rebuilt core was silent from boot,
+and the service menu's sound test froze the controls on some
+entries. The freeze was the tell: unlike the in-game writer, the
+test menu waits for the Z80 to take each latch byte, and a Z80 that
+never answers parks the main CPU on /OBF forever. So the Z80 was
+dead from power-up, and the reason was one line in sh_core: the
+loader forwards the whole 64 KB Z80 stream slot (32 KB of ROM plus
+zero padding) into a BRAM addressed by 15 bits, so the padding
+wrapped and wrote zeros over the ROM it had just loaded. No
+simulation could have caught it, because none of them runs the
+ioctl loader — the bench fills that BRAM with $readmemh and ties
+the loader's write port off. That is the blind spot to remember:
+anything that only exists on the hardware side of the loader
+(stream slot sizes, wrap arithmetic, side-channel writes) has no
+gate. M7 puts the i8751's ROM through the same path, so a loader
+unit test that plays a synthetic stream into sh_rom_loader and
+checks what lands where is due before then.
+
+With the ROM loading properly the sound came back, and the next
+race brought a third failure with a very different signature: not
+silence but distortion, part way through a race, and reproducible
+on demand in the service menu by switching quickly between sound
+test entries 11 to 15. The shape of that reproducer — restarting
+sounds on top of sounds still playing, with the latch protocol
+otherwise behaving — pointed at the PCM chip's voice restart. Our
+315-5218 engine spreads each channel over tens of clocks: it reads
+the current address at E_LOAD, waits for SDRAM, and writes address
+plus delta back at E_ACC. A Z80 write of a new start address landing
+inside that window was overwritten by the stale write-back, and the
+voice went on playing from old-plus-delta — noise from somewhere
+else in the sample ROM, and for a looped voice like the engine note,
+noise until the driver reloaded it. MAME never has this race because
+segapcm's write handler runs the stream up to "now" before applying
+the byte, so the write always stands. The engine now tracks a dirty
+bit per write-back register (0x84, 0x85 and the end-of-sample stop
+bit in 0x86) for the channel in flight and skips its own write when
+the Z80 got there first, and the Z80 write sits last in the always
+block so a same-clock collision goes its way as the comment always
+claimed. The existing unit test only ever reprogrammed channels
+between ticks, which is why this survived M5; the new
+write_during_engine test lands writes in every engine state of a
+busy channel and failed on the first tick against the old RTL.
+
+Three hardware-only sound failures in a row earned a proper audit of
+what the bench does and does not model, because "the gates pass"
+had stopped meaning "the board works". The list, so nobody has to
+rediscover it:
+
+- The Z80 itself. The FPGA runs the VHDL T80s with a clock enable;
+  every simulation up to this point ran tv80, a different core on a
+  derived 4 MHz clock, because Verilator does not read VHDL. The
+  T80s samples read data one enable period (about 12 clocks) after
+  it raises RD, where tv80 gives a device half a T-state more; it
+  edge-detects NMI on every clock and holds it; it asserts WR in T2.
+  None of that had been simulated. GHDL 6's synthesizer converts the
+  T80 to Verilog (verif/board/t80/gen.sh, one width-mismatch patch
+  Quartus tolerates and GHDL refuses), and the bench now runs the
+  converted T80s by default, tv80 staying as the fast option
+  (Z80=tv80). Every device on the Z80 bus answers a read in one
+  clock and takes a one-clock write strobe, so the tighter T80s
+  window is met everywhere; the point is that this is now checked
+  by running the real core, not by reading. And the first run with
+  it moved the M5 attract gate from 0.942 to 0.972 envelope
+  correlation against MAME (sample correlation 0.775 to 0.951): the
+  hardware's Z80 is the more faithful one, tv80 was the outlier.
+- The ioctl loader. The bench fills the BRAMs with $readmemh and
+  ties the loader off, so stream slot arithmetic is untested (the
+  wrap bug above). Still open; a loader unit test is due before M7.
+- SDRAM. The model serves its ports round-robin at a fixed 12 clocks
+  each; the real controller is fixed-priority (main CPU, sub CPU,
+  then the PCM port) with real row and refresh timing, so the PCM
+  engine's fetch latency on the board is both longer and burstier
+  than anything the bench produces. The engine drops a tick silently
+  if one arrives while it is still fetching, which on the board would
+  read as a slow, flat pitch on every sample.
+- Physical margin: MLAB placement, hold on multi-cycle paths, the
+  class that ate the SDRAM cache. No simulation sees it; only the
+  fitter reports and the board do.
+- The MiSTer side of the audio path (the emu top's AUDIO_L/R, the
+  framework's resampler) is outside the bench, which taps the mixer
+  directly.
+
+Because the last two items cannot be simulated, the board now
+reports what it sees: two sticky flags in sh_core, cleared by reset,
+drive the DE10's LEDs. The disk LED lights the first time the main
+CPU overwrites a latch byte the Z80 has not taken (the exact event
+the 68000 counts at 20C460 and the bench logs as SNDOVR); the user
+LED lights the first time the PCM engine misses a tick (PCMLOST in
+the bench). One glance at the board during a crash then says which
+mechanism it was, or that it was neither.
+
+The first hardware run with the LEDs answered the mechanism question:
+the disk LED lit when the sound broke, so the 68000 did overwrite a
+byte the Z80 had not taken. That is the coroutine shift, still there
+with the zero-wait ROM. And the bench with the real T80 cannot make
+it happen. The numbers, measured in the bench during a race (the
+SNDTIME lines, worst case per 100 frames):
+
+| | value |
+| --- | --- |
+| 68000 latch writer, shortest gap between bytes | 53.4 us (21-iteration dbra, cache-resident) |
+| Z80, worst write-to-read latency | 16.1 us |
+| PCM SDRAM latency 12 vs 48 ram clocks | no change to either |
+| overwrites in 15 s of racing | 0 |
+
+The 68000 has one writer of the latch (0x3E76, called once per frame
+at the end of the vblank handler with interrupts masked), the Z80's
+NMI handler is three instructions to the port read, the driver never
+executes HALT, and MAME drives the NMI from /OBF as a level exactly
+as we do. So a missed byte on the board means the Z80 was held off
+the latch for more than 53 us, three times its worst measured
+latency, and nothing in the RTL can do that except a Z80 reset (port
+B bit 5) or the core's pause, which stops both CPUs alike. The
+on-screen overlay (OSD "Sound debug overlay": overwrite count and a
+/OBF-stuck flag) exists to split the two remaining stories: one late
+byte and a shifted coroutine, or a Z80 reset that lands with a byte
+pending, after which /OBF stays low, no NMI edge ever comes, and the
+sound program is deaf until something re-initialises the PPI.
+
+The overlay grew until it could show the T80's own state machine (a
+DBG port added to the vendored core: NMI latch, NMI/INT cycle,
+prefix, M-cycle, T-state, HALT, bus-ack, IFF1), sampled at the first
+overwrite and again one millisecond into the blind window, plus
+counts of opcode fetches, NMI vector fetches and latch acks while
+blind. The second race with it gave the answer. Fifty-three
+microseconds after the byte was written, with /NMI held low the whole
+time, the Z80 was executing the YM2203 busy-wait at 0x09C6 with its
+NMI latch clear: the edge had been lost. A millisecond later it was
+running its own power-on initialisation from address 0, in the LDIR
+that clears the work RAM, and the reset counter, which samples the
+port B reset bit every clock, still said one reset since boot. Two
+and a half milliseconds after that an NMI was accepted and the port
+read, though /NMI had never risen in between. No software path does
+any of those three things, and the bench with the converted T80,
+swept across 406 phases of that loop, takes the NMI every time.
+
+The first reading of that was a runt pulse on the T80's asynchronous
+reset - the core's reset line is a combinational OR that includes the
+PLL's lock output, and the T80 and jt12 were the only blocks fed it
+raw. It was wrong. The reset was registered (it stays registered: an
+asynchronous reset into vendored cores is a hardware-only failure
+class no simulation can show, so registered resets at every such
+boundary are the rule now), a catcher flop with an asynchronous set
+was put on the raw line, and the next crash came with the catcher
+dark. Recorded here because it is the kind of confident diagnosis
+this file exists to warn about.
+
+What followed was a bisection by builds, one variable at a time,
+each with the on-screen overlay reading the board back:
+
+| build | change | result |
+| --- | --- | --- |
+| netlist | Quartus given the GHDL-generated Verilog of the T80 instead of the VHDL, so board and bench share one netlist | same crash, same signature |
+| insurance | /NMI re-issued after 32 us without a vector fetch | byte no longer lost; sound still derailed, gently; then a crash with the Z80 in RAM |
+| stage timeouts | per-stage latency capture inside the T80 | NMI cycle started, no vector fetch, then an INT acknowledge at 0x0037 - the address only reachable by falling through the JP at the end of the init code |
+| timing report | worst paths into the T80 by name | +4.06 ns setup on the program-counter update, +0.44 ns hold; nothing marginal |
+| tv80 | the bench's Verilog Z80 on the same clock enable | no crash |
+
+So the T80, as this board runs it, occasionally fails to load its
+program counter at the end of an M-cycle - the NMI vector, a plain
+JP - while the identical netlist executes 90 s of the real protocol
+in Verilator without a fault, every timing corner is clean with
+margin, both tools read the netlist without a latch or a multiple
+driver, no memory is in an MLAB, and every input to the core is a
+register. Why is not explained, and this file does not pretend it
+is. What is established is that tv80, on the same enable, in the
+same environment, does not do it, so tv80 is the Z80 of this core
+and the T80 stays only as the bench's cross-check (make ... Z80=t80,
+the netlist in verif/board/t80). The edge insurance stays: it never
+fires on a Z80 that behaves, and the bench logs it if one ever does.
+The on-screen overlay and the LED flags were debug scaffolding and
+came out again once the answer was in; the sticky flags behind them
+(latch overwrite, PCM tick lost, Z80 fetch outside ROM) remain as
+bench log lines.
+
+Lessons for the file, in the order they were paid for: check the
+artifact, not the exit code; when the RTL is provably identical in
+both worlds, stop reading it and instrument the board; put the
+instrument's meaning in the sticky flags, not in running balances a
+transient can cancel; and a bisection by builds beats a theory by
+reading, however good the theory sounds.
+
+What was missing before the crash showed up was everything around
+the game. The three clone sets went
+into romsets.py the Y Board way, full explicit entries: hangon1 (the
+pre-Rev-A program, four main ROMs), hangon2 (the ride-on, its own
+main and sub programs plus the rider's foot switches on SERVICE bits
+7:6 — wired unconditionally in sh_core since every other set leaves
+them IPT_UNKNOWN, and two extra buttons on the MRA list), and
+hangonvf (the Spanish bootleg with the logo art redrawn — its
+program ROMs match the parent byte for byte under bootleg names, so
+the MRA references the parent's files and only the redrawn tiles and
+three sprite pairs come from the bootleg's own). One trap: MAME
+names the ride-on's zoom PROM epr-6844.ic119 for its board socket,
+but the zips only carry the parent's identical epr-6844.ic123 — the
+set list has to use the name a zip actually contains, not the name
+the board silkscreen would give it. Each clone passed the full-frame
+board check against its own MAME capture at frame 300, first try —
+the core needed nothing beyond the foot-switch wire, which is what a
+scaffold three boards deep is for. The 30-minute attract soak and
+the control-feel checklist stay on the user's bench.
+
+## 5. Open questions (MAME is the default answer until hardware says otherwise)
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and
    no game visibly needs it. Leave it out; if a game polls for an

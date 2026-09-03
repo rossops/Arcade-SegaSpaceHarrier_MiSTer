@@ -1,3 +1,6 @@
+// tv80s with a clock enable: the bus-signal wrapper advances only on cen,
+// like the T80s wrapper, so the FPGA can run tv80 at 4 MHz from clk_sys.
+// Sega Space Harrier core, derived from tv80s.v (same licence).
 //
 // TV80 8-Bit Microprocessor Core
 // Based on the VHDL T80 core by Daniel Wallner (jesus@opencores.org)
@@ -24,11 +27,9 @@
 
 `define TV80DELAY
 
-module tv80s (/*AUTOARG*/
-  // Outputs
-  m1_n, mreq_n, iorq_n, rd_n, wr_n, rfsh_n, halt_n, busak_n, A, dout, 
-  // Inputs
-  reset_n, clk, wait_n, int_n, nmi_n, busrq_n, di
+module tv80s_cen (/*AUTOARG*/
+  m1_n, mreq_n, iorq_n, rd_n, wr_n, rfsh_n, halt_n, busak_n, A, dout, dbg,
+  reset_n, clk, cen, wait_n, int_n, nmi_n, busrq_n, di
   );
 
   parameter Mode = 0;    // 0 => Z80, 1 => Fast Z80, 2 => 8080, 3 => GB
@@ -38,6 +39,8 @@ module tv80s (/*AUTOARG*/
 
   input         reset_n; 
   input         clk; 
+  input         cen;            // clock enable (the T80s CEN)
+  output [15:0] dbg;
   input         wait_n; 
   input         int_n; 
   input         nmi_n; 
@@ -59,7 +62,6 @@ module tv80s (/*AUTOARG*/
   reg           rd_n; 
   reg           wr_n; 
   
-  wire          cen;
   wire          intcycle_n;
   wire          no_read;
   wire          write;
@@ -68,12 +70,11 @@ module tv80s (/*AUTOARG*/
   wire [6:0]    mcycle;
   wire [6:0]    tstate;
 
-  assign    cen = 1;
 
   tv80_core #(Mode, IOWait) i_tv80_core
     (
      .cen (cen),
-     .dbg (),
+     .dbg (dbg),
      .m1_n (m1_n),
      .iorq (iorq),
      .no_read (no_read),
@@ -108,7 +109,7 @@ module tv80s (/*AUTOARG*/
           mreq_n <= `TV80DELAY 1'b1;
           di_reg <= `TV80DELAY 0;
         end
-      else
+      else if (cen)
         begin
           rd_n <= `TV80DELAY 1'b1;
           wr_n <= `TV80DELAY 1'b1;

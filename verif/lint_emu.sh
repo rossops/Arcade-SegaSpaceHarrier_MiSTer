@@ -4,7 +4,7 @@
 # Quartus would otherwise report (unlike verif/lint.sh this is not -Wall).
 set -e
 cd "$(dirname "$0")/.."
-verilator --lint-only -DSIMULATION --top-module emu -DSH_Z80_TV80 -Isys -Irtl/video -Irtl/cpu/fx68k \
+verilator --lint-only -DSIMULATION --top-module emu -Isys -Irtl/video -Irtl/cpu/fx68k \
   -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-PROCASSINIT \
   -Wno-IMPORTSTAR -Wno-WIDTH -Wno-PINCONNECTEMPTY -Wno-CASEINCOMPLETE \
   -Wno-BLKSEQ -Wno-TIMESCALEMOD -Wno-PINMISSING -Wno-UNOPTFLAT \

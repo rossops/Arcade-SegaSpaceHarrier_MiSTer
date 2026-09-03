@@ -7,15 +7,25 @@ SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
   rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv rtl/video/sh_roadrom.sv rtl/video/sh_road.sv rtl/video/sh_zoomrom.sv rtl/video/sh_sprite.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv
 VFLAGS := -Wno-fatal -Wno-lint -Wno-style -Werror-PINMISSING -Wno-BLKANDNBLK -Wno-MULTIDRIVEN -Wno-UNOPTFLAT \
-  -DSIMULATION -DSH_Z80_TV80 --timing -O2 --x-assign fast --x-initial fast \
+  -DSIMULATION --timing -O2 --x-assign fast --x-initial fast \
   --no-assert-case --top-module tb_board -I$(ROOT)/rtl/cpu/fx68k -I$(ROOT)/rtl/video
+# Z80=tv80 (default): the core the DE10 runs. Z80=t80: the vendored T80 as the
+# GHDL-converted netlist (verif/board/t80/gen.sh), the cross-check that showed
+# the M6 sound crash was the T80's alone.
+Z80 ?= tv80
+ifeq ($(Z80),t80)
+  VFLAGS += -DSH_Z80_T80
+  Z80SRC := $(ROOT)/verif/board/t80/t80s.vlt $(ROOT)/verif/board/t80/T80s_ghdl.v $(wildcard $(ROOT)/verif/board/tv80/*.v)
+else
+  Z80SRC := $(wildcard $(ROOT)/verif/board/tv80/*.v)
+endif
 FRAMES ?= 10
 DUMPFRAME ?= -1
 COIN ?= -1
 PLUSARGS ?=
 GAME ?= hangon
 
-EXTRA := $(wildcard $(ROOT)/rtl/audio/jt51/*.v) $(wildcard $(ROOT)/rtl/audio/jt03/*.v) $(wildcard $(ROOT)/verif/board/tv80/*.v)
+EXTRA := $(wildcard $(ROOT)/rtl/audio/jt51/*.v) $(wildcard $(ROOT)/rtl/audio/jt03/*.v) $(Z80SRC)
 
 obj_dir/Vtb_board: $(addprefix $(ROOT)/,$(SRCS)) $(EXTRA) main.cpp
 	verilator $(VFLAGS) --cc --exe --build -j 4 $(addprefix $(ROOT)/,$(SRCS)) $(EXTRA) main.cpp -o Vtb_board
@@ -30,8 +40,9 @@ run: obj_dir/Vtb_board
 	for p in 0 1 2; do ln -sf $(ROOT)/verif/golden/$(GAME)/tilerom$$p.hex out/tilerom$$p.hex; done; \
 	for p in 0 1; do ln -sf $(ROOT)/verif/golden/$(GAME)/roadrom$$p.hex out/roadrom$$p.hex; done; \
 	ln -sf $(ROOT)/verif/golden/$(GAME)/zoomrom.hex out/zoomrom.hex; \
+	rm -f out/z80rom.hex && head -16384 $(ROOT)/verif/golden/$(GAME)/z80.hex > out/z80rom.hex; \
 	sh $(ROOT)/tools/keepalive.sh $(ROOT) & KA=$$!; \
-	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) +tilerom +roadrom +zoomrom $(PLUSARGS)); RC=$$?; \
+	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) +tilerom +roadrom +zoomrom +z80rom $(PLUSARGS)); RC=$$?; \
 	kill $$KA 2>/dev/null; wait $$KA 2>/dev/null; exit $$RC
 
 clean:

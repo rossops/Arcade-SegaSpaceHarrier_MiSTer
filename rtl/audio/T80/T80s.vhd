@@ -101,7 +101,8 @@ entity T80s is
 		DIRSet     : in  std_logic := '0';
 		DIR        : in  std_logic_vector(229 downto 0) := (others => '0');
 		-- Prefix/instruction-set state forwarded from T80
-		ISet_out   : out std_logic_vector(1 downto 0)
+		ISet_out   : out std_logic_vector(1 downto 0);
+		DBG        : out std_logic_vector(15 downto 0)   -- Sega Space Harrier core: sound debug overlay
 	);
 end T80s;
 
@@ -147,7 +148,8 @@ begin
 			REG => REG,
 			DIRSet => DIRSet,
 			DIR => DIR,
-			ISet_out => ISet_out
+			ISet_out => ISet_out,
+			DBG => DBG
 		);
 
 	process (RESET_n, CLK)
