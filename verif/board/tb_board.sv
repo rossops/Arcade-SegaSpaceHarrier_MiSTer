@@ -77,7 +77,7 @@ sh_core core (
     .brm_wr(1'b0), .brm_addr(27'd0), .brm_din(16'd0),
     .p1_buttons({5'd0, 1'b0, test_sw, 1'b0, coin1, p1_start, 6'd0} | hold_now | scr_btn),
     .stick_x(scr_x), .stick_y(scr_y), .throttle(scr_thr),
-    .stick_mode(2'd0), .ana_curve(2'd0), .ana_range(2'd0),
+    .stick_mode(scr_dpad ? 2'd2 : 2'd0), .stick_hold(scr_hold), .ana_curve(2'd0), .ana_range(2'd0),
     .dsw_a(dsw_a), .dsw_b(dsw_b), .service(1'b0), .test(test_sw), .coin1(coin1), .coin2(1'b0),
     .r(r), .g(g), .b(b), .ce_vid(ce_pix), .hs(hs), .vs(vs), .hb(hb), .vb(vb),
     .audio_l(al), .audio_r(ar),
@@ -94,12 +94,60 @@ always @(posedge clk_sys) begin
                                      frame, core.vcnt, core.pa0_out, core.soundsys.z_addr, core.soundsys.z_rst_n, core.soundsys.z80_dbg[15]);
     if (core.pcm_tick_lost) $display("PCMLOST f=%0d: PCM tick while the engine was busy", frame);
     if (dbg_z80_crash && !z80_crash_d) $display("Z80CRASH f=%0d: opcode fetch at %04x", frame, core.soundsys.z_addr);
+    // i8751 bring-up: every P1 write that changes the window or drives an IPL,
+    // the first bus cycles, and each IRQ 4 delivered
+    if (core.board_desc.has_mcu) begin
+        // (the checksum loop toggles the window every read: log the first
+        // few window changes, and every write that drives an IPL)
+        if (core.mcu.p1_o != mcu_p1_d && (mcu_p1_n < 60 || core.mcu.p1_o[2:0] != 3'b111)) begin
+            mcu_p1_n = mcu_p1_n + 1;
+            $display("MCUP1 f=%0d line=%0d p1=%02x window=%02x ipl=%0d", frame, core.vcnt, core.mcu.p1_o,
+                     {core.mcu.p1_o[6], 1'b0, core.mcu.p1_o[5:3]}, ~core.mcu.p1_o[2:0]);
+        end
+        mcu_p1_d <= core.mcu.p1_o;
+        if (core.mcu_start && (mcu_n < 40 || frame >= mcu_trace_from)) begin
+            mcu_n = mcu_n + 1;
+            mcu_shown = 1'b1;
+            $display("MCUBUS f=%0d %s %06x%s", frame, core.mcu_wr ? "wr" : "rd", core.mcu_baddr, core.mcu_wr ? $sformatf(" = %02x", core.mcu_bdout) : "");
+        end
+        else if (core.mcu_start) mcu_shown = 1'b0;
+        // the returned byte only for accesses whose start line was shown (the
+        // cap once let every checksum read through here: 100k lines a run)
+        if (core.mcu_ack && !core.mcu_wr && mcu_shown) $display("MCUBUS    -> %02x", core.mcu_bdin);
+        if (core.c_start && core.mcu_grant) $display("MCUBUS COLLISION f=%0d: the 68000 started a cycle under an MCU grant", frame);
+        // the two masters' state, for deadlocks
+        if (vb && !vb_d && (frame % 20) == 0)
+            $display("MCUSTATE f=%0d busy=%b req=%b hold=%b grant=%b c_valid=%b c_addr=%06x mcu_pc=%04x p1=%02x ipl_l=%0d",
+                     frame, core.mcu.busy, core.mcu_req, core.mcu_hold, core.mcu_grant, core.c_valid, {core.c_addr, 1'b0},
+                     core.mcu.mcu.pc, core.mcu.p1_o, core.mcu_ipl_l);
+        if (core.mcu_baddr == 24'h040385 && core.mcu_start && core.mcu_wr) $display("MCU40385 f=%0d write %02x", frame, core.mcu_bdout);
+        if (core.mcu_drop && core.mcu_req && core.mcu_ack) $display("MCU40385 f=%0d write %02x dropped", frame, core.mcu_bdout);
+        // the stick bytes the MCU hands the 68000 (its ADC loop, one pair a frame)
+        if (core.mcu_start && core.mcu_wr && core.mcu_baddr == 24'h040492) mcu_stick_x = core.mcu_bdout;
+        if (core.mcu_start && core.mcu_wr && core.mcu_baddr == 24'h040493) $display("MCUSTICK f=%0d x=%02x y=%02x", frame, mcu_stick_x, core.mcu_bdout);
+        // the MCU's fallback mode (internal bit 22.0): it stops sampling the stick
+        if (core.mcu.iram[8'h22][0] && !mcu_fallback_d) $display("MCUFALLBACK f=%0d: the MCU gave up on the heartbeat", frame);
+        mcu_fallback_d <= core.mcu.iram[8'h22][0];
+        // the 68000's side of the heartbeat (odd byte, low lane): written once at boot
+        if (core.c_start && core.c_wr && core.c_addr == 23'h0201C2 && core.c_be[0]) $display("CPU40385 f=%0d line=%0d write %02x", frame, core.vcnt, core.c_dout[7:0]);
+        // bus cycles per frame and the mean clocks from request to acknowledge
+        if (core.mcu_req && !mcu_req_d) mcu_t0 = cyc;
+        if (core.mcu_ack) begin mcu_cyc = mcu_cyc + 1; mcu_lat = mcu_lat + (cyc - mcu_t0); end
+        mcu_req_d <= core.mcu_req;
+        if (vb && !vb_d && (frame % 20) == 0) begin
+            $display("MCUTOT f=%0d cycles=%0d mean_latency=%0d clk", frame, mcu_cyc, mcu_cyc == 0 ? 0 : mcu_lat / mcu_cyc);
+            mcu_cyc = 0; mcu_lat = 0;
+        end
+    end
     // a Z80 reset with a latch byte still pending would leave /OBF low with
     // no NMI edge to come: log every reset with the handshake state
     z80_run_d <= core.z80_run;
     if (!core.z80_run && z80_run_d) $display("Z80RST f=%0d obf_n=%b (byte %02x pending=%b)", frame, core.snd_obf_n, core.pa0_out, ~core.snd_obf_n);
 end
-reg z80_run_d;
+reg z80_run_d; reg [7:0] mcu_p1_d = 8'hFF; reg [7:0] mcu_stick_x = 8'd0; reg mcu_fallback_d = 1'b0;
+integer mcu_n = 0, mcu_p1_n = 0, mcu_cyc = 0, mcu_lat = 0, mcu_t0 = 0, mcu_trace_from = -1; reg mcu_req_d = 0;
+reg mcu_shown = 1'b0;
+initial if (!$value$plusargs("mcutrace=%d", mcu_trace_from)) mcu_trace_from = -1;
 
 // ---- traces
 //  trace_*_rtl.txt : program-space word fetches (FC = 2 user / 6 supervisor)
@@ -203,6 +251,12 @@ initial begin
 end
 wire [15:0] hold_now = (hold_from >= 0 && frame >= hold_from) ? hold_mask[15:0] : 16'd0;
 
+// +stick_hold: the OSD "re-centering off" (held stick); +dpad: analog+d-pad mode
+reg scr_hold = 1'b0, scr_dpad = 1'b0;
+initial begin
+    if ($test$plusargs("stick_hold")) scr_hold = 1'b1;
+    if ($test$plusargs("dpad")) scr_dpad = 1'b1;
+end
 // ---- +script=<file>: scripted inputs, one row per change, applied from
 // that frame on: "frame buttons_hex stick_x stick_y throttle_hex"
 // (buttons in the J1 order above, stick signed decimal, throttle 80 = idle)
@@ -280,9 +334,9 @@ always @(posedge clk_sys) begin
     // the next frame's number: the copy with frame == N feeds visible
     // frame N (per-consumer dump timing).
     if (dumpframe >= 0 && frame == dumpframe && core.line_start && core.vcnt == 9'd260)
-        dump_ram("rtl_spriteram.bin", 1024, 4);
+        dump_ram("rtl_spriteram.bin", core.board_desc.sharrier_vid ? 2048 : 1024, 4);
     if (dumpframe >= 0 && frame == dumpframe && vb && !vb_dump_d) begin
-        dump_ram("rtl_tileram.bin", 8192, 0);
+        dump_ram("rtl_tileram.bin", core.board_desc.sharrier_vid ? 16384 : 8192, 0);
         dump_ram("rtl_textram.bin", 2048, 1);
         dump_ram("rtl_paletteram.bin", 2048, 2);
         dump_ram("rtl_roadram.bin", 2048, 3);

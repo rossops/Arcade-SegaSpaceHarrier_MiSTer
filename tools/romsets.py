@@ -326,4 +326,220 @@ ROMSETS = {
         "buttons": ("Gas,Brake,Start,Coin,Pause,Test,Service",
                     "A,B,Start,R,L,X,Y"),
     },
+    # Space Harrier (Rev A). MAME 0.289 `sharrier`: 10 MHz 68000s, SHARRIER
+    # sprites and road, the dumped i8751 315-5163A as the main CPU's only
+    # interrupt source (docs/notes/i8751_315-5163a.md).
+    "sharrier": {
+        "name": "Space Harrier (Rev A, 8751 315-5163A)",
+        "zipfile": "sharrier",
+        "year": "1985",
+        "category": "Shooter / 3rd Person",
+        # descriptor: sharrier video (x32 sprites, SHARRIER road), both 68000s
+        # at 10 MHz, the i8751 on the main bus
+        "game_id": 1,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "mcu": 1,
+        "sound_board": 0,     # YM2203 + 315-5218 at 8 MHz
+        "spr_banks": 8,       # 1 MB region / 128 KB banks
+        "adc_reverse": 0x03,  # both stick axes are PORT_REVERSE
+        "ana_mode": 1,        # sharrier: stick X / Y
+        "regions": {
+            "main": ("w16", [
+                ("epr-7188a.ic97", 0x8000, "45e173c3"),
+                ("epr-7184a.ic84", 0x8000, "e1934a51"),
+                ("epr-7189.ic98",  0x8000, "40b1309f"),
+                ("epr-7185.ic85",  0x8000, "ce78045c"),
+                ("epr-7190.ic99",  0x8000, "f6391091"),
+                ("epr-7186.ic86",  0x8000, "79b367d7"),
+                ("epr-7191.ic100", 0x8000, "6171e9d3"),
+                ("epr-7187.ic87",  0x8000, "70cb72ef"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7182.ic54", 0x8000, "d7c535b6"),
+                ("epr-7183.ic67", 0x8000, "a6153af8"),
+            ]),
+            "z80": ("flat", [
+                ("epr-7234.ic73", 0x4000, "d6397933"),
+                ("epr-7233.ic72", 0x4000, "504e76d9"),
+            ]),
+            "pcm": ("flat", [
+                ("epr-7231.ic5", 0x8000, "871c6b14"),
+                ("epr-7232.ic6", 0x8000, "4b59340c"),
+            ]),
+            # LOAD32_BYTE groups of four (ic36/28/18/8 ...), byte 0 first
+            "sprite": ("x32", [
+                ("epr-7230.ic36", 0x8000, "93e2d264"),
+                ("epr-7222.ic28", 0x8000, "edbf5fc3"),
+                ("epr-7214.ic18", 0x8000, "e8c537d8"),
+                ("epr-7206.ic8",  0x8000, "22844fa4"),
+                ("epr-7229.ic35", 0x8000, "cd6e7500"),
+                ("epr-7221.ic27", 0x8000, "41f25a9c"),
+                ("epr-7213.ic17", 0x8000, "5bb09a67"),
+                ("epr-7205.ic7",  0x8000, "dcaa2ebf"),
+                ("epr-7228.ic34", 0x8000, "d5e15e66"),
+                ("epr-7220.ic26", 0x8000, "ac62ae2e"),
+                ("epr-7212.ic16", 0x8000, "9c782295"),
+                ("epr-7204.ic6",  0x8000, "3711105c"),
+                ("epr-7227.ic33", 0x8000, "60d7c1bb"),
+                ("epr-7219.ic25", 0x8000, "f6330038"),
+                ("epr-7211.ic15", 0x8000, "60737b98"),
+                ("epr-7203.ic5",  0x8000, "70fb5ebb"),
+                ("epr-7226.ic32", 0x8000, "6d7b5c97"),
+                ("epr-7218.ic24", 0x8000, "cebf797c"),
+                ("epr-7210.ic14", 0x8000, "24596a8b"),
+                ("epr-7202.ic4",  0x8000, "b537d082"),
+                ("epr-7225.ic31", 0x8000, "5e784271"),
+                ("epr-7217.ic23", 0x8000, "510e5e10"),
+                ("epr-7209.ic13", 0x8000, "7a2dad15"),
+                ("epr-7201.ic3",  0x8000, "f5ba4e08"),
+                ("epr-7224.ic30", 0x8000, "ec42c9ef"),
+                ("epr-7216.ic22", 0x8000, "6d4a7d7a"),
+                ("epr-7208.ic12", 0x8000, "0f732717"),
+                ("epr-7200.ic2",  0x8000, "fc3bf8f3"),
+                ("epr-7223.ic29", 0x8000, "ed51fdc4"),
+                ("epr-7215.ic21", 0x8000, "dfe75f3d"),
+                ("epr-7207.ic11", 0x8000, "a2c07741"),
+                ("epr-7199.ic1",  0x8000, "b191e22f"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7196.ic31", 0x8000, "347fa325"),
+                ("epr-7197.ic46", 0x8000, "39d98bd1"),
+                ("epr-7198.ic60", 0x8000, "3da3ea6b"),
+            ]),
+            "road": ("flat", [
+                ("epr-7181.ic2", 0x8000, "b4740419"),
+            ]),
+            "zoom": ("flat", [
+                ("epr-6844.ic123", 0x2000, "e3ec7bd6"),
+            ]),
+            # the 8751's internal ROM, run by the core's MCS-51 (M7)
+            "mcu": ("flat", [
+                ("315-5163a.ic32", 0x1000, "203dffeb"),
+            ]),
+        },
+        # SW A (byte 0) coinage, SW B (byte 1) game options; defaults MAME's
+        "dip_default": "FF,FC",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Moving"),
+            (9, 9, "Demo Sounds", "On,Off"),
+            (10, 11, "Lives", "5,4,2,3"),
+            (12, 12, "Bonus Life", "7000000,5000000"),
+            (13, 13, "Trial Time", "On,Off"),
+            (14, 15, "Difficulty", "Hardest,Hard,Easy,Medium"),
+        ],
+        "buttons": ("Fire 1,Fire 2,Fire 3,Start,Coin,Pause,Test,Service",
+                    "A,B,X,Start,R,L,Y,Select"),
+    },
+
+    # Space Harrier, the earlier program. MAME 0.289 `sharrier1`: the two
+    # first main ROMs differ, and the MCU is 315-5163, which MAME carries as a
+    # BAD_DUMP handcrafted from the decapped Rev A part.
+    "sharrier1": {
+        "name": "Space Harrier (8751 315-5163)",
+        "zipfile": "sharrier",
+        "year": "1985",
+        "category": "Shooter / 3rd Person",
+        # descriptor: sharrier video (x32 sprites, SHARRIER road), both 68000s
+        # at 10 MHz, the i8751 on the main bus
+        "game_id": 1,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "mcu": 1,
+        "sound_board": 0,     # YM2203 + 315-5218 at 8 MHz
+        "spr_banks": 8,       # 1 MB region / 128 KB banks
+        "adc_reverse": 0x03,  # both stick axes are PORT_REVERSE
+        "ana_mode": 1,        # sharrier: stick X / Y
+        "regions": {
+            "main": ("w16", [
+                ("epr-7188.ic97",  0x8000, "7c30a036"),
+                ("epr-7184.ic84",  0x8000, "16deaeb1"),
+                ("epr-7189.ic98",  0x8000, "40b1309f"),
+                ("epr-7185.ic85",  0x8000, "ce78045c"),
+                ("epr-7190.ic99",  0x8000, "f6391091"),
+                ("epr-7186.ic86",  0x8000, "79b367d7"),
+                ("epr-7191.ic100", 0x8000, "6171e9d3"),
+                ("epr-7187.ic87",  0x8000, "70cb72ef"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7182.ic54", 0x8000, "d7c535b6"),
+                ("epr-7183.ic67", 0x8000, "a6153af8"),
+            ]),
+            "z80": ("flat", [
+                ("epr-7234.ic73", 0x4000, "d6397933"),
+                ("epr-7233.ic72", 0x4000, "504e76d9"),
+            ]),
+            "pcm": ("flat", [
+                ("epr-7231.ic5", 0x8000, "871c6b14"),
+                ("epr-7232.ic6", 0x8000, "4b59340c"),
+            ]),
+            # LOAD32_BYTE groups of four (ic36/28/18/8 ...), byte 0 first
+            "sprite": ("x32", [
+                ("epr-7230.ic36", 0x8000, "93e2d264"),
+                ("epr-7222.ic28", 0x8000, "edbf5fc3"),
+                ("epr-7214.ic18", 0x8000, "e8c537d8"),
+                ("epr-7206.ic8",  0x8000, "22844fa4"),
+                ("epr-7229.ic35", 0x8000, "cd6e7500"),
+                ("epr-7221.ic27", 0x8000, "41f25a9c"),
+                ("epr-7213.ic17", 0x8000, "5bb09a67"),
+                ("epr-7205.ic7",  0x8000, "dcaa2ebf"),
+                ("epr-7228.ic34", 0x8000, "d5e15e66"),
+                ("epr-7220.ic26", 0x8000, "ac62ae2e"),
+                ("epr-7212.ic16", 0x8000, "9c782295"),
+                ("epr-7204.ic6",  0x8000, "3711105c"),
+                ("epr-7227.ic33", 0x8000, "60d7c1bb"),
+                ("epr-7219.ic25", 0x8000, "f6330038"),
+                ("epr-7211.ic15", 0x8000, "60737b98"),
+                ("epr-7203.ic5",  0x8000, "70fb5ebb"),
+                ("epr-7226.ic32", 0x8000, "6d7b5c97"),
+                ("epr-7218.ic24", 0x8000, "cebf797c"),
+                ("epr-7210.ic14", 0x8000, "24596a8b"),
+                ("epr-7202.ic4",  0x8000, "b537d082"),
+                ("epr-7225.ic31", 0x8000, "5e784271"),
+                ("epr-7217.ic23", 0x8000, "510e5e10"),
+                ("epr-7209.ic13", 0x8000, "7a2dad15"),
+                ("epr-7201.ic3",  0x8000, "f5ba4e08"),
+                ("epr-7224.ic30", 0x8000, "ec42c9ef"),
+                ("epr-7216.ic22", 0x8000, "6d4a7d7a"),
+                ("epr-7208.ic12", 0x8000, "0f732717"),
+                ("epr-7200.ic2",  0x8000, "fc3bf8f3"),
+                ("epr-7223.ic29", 0x8000, "ed51fdc4"),
+                ("epr-7215.ic21", 0x8000, "dfe75f3d"),
+                ("epr-7207.ic11", 0x8000, "a2c07741"),
+                ("epr-7199.ic1",  0x8000, "b191e22f"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7196.ic31", 0x8000, "347fa325"),
+                ("epr-7197.ic46", 0x8000, "39d98bd1"),
+                ("epr-7198.ic60", 0x8000, "3da3ea6b"),
+            ]),
+            "road": ("flat", [
+                ("epr-7181.ic2", 0x8000, "b4740419"),
+            ]),
+            "zoom": ("flat", [
+                ("epr-6844.ic123", 0x2000, "e3ec7bd6"),
+            ]),
+            # 315-5163, MAME's BAD_DUMP reconstruction
+            "mcu": ("flat", [
+                ("315-5163.ic32", 0x1000, "52b0c81a"),
+            ]),
+        },
+        # SW A (byte 0) coinage, SW B (byte 1) game options; defaults MAME's
+        "dip_default": "FF,FC",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Moving"),
+            (9, 9, "Demo Sounds", "On,Off"),
+            (10, 11, "Lives", "5,4,2,3"),
+            (12, 12, "Bonus Life", "7000000,5000000"),
+            (13, 13, "Trial Time", "On,Off"),
+            (14, 15, "Difficulty", "Hardest,Hard,Easy,Medium"),
+        ],
+        "buttons": ("Fire 1,Fire 2,Fire 3,Start,Coin,Pause,Test,Service",
+                    "A,B,X,Start,R,L,Y,Select"),
+    },
+
 }

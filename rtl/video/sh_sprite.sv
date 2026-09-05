@@ -1,5 +1,10 @@
 //============================================================================
-//  SEGA_HANGON_SPRITES (sega16sp.cpp) as a line renderer. MAME draws whole
+//  SEGA_HANGON_SPRITES and, with `sharrier`, SEGA_SHARRIER_SPRITES
+//  (sega16sp.cpp) as a line renderer. The Space Harrier variant keeps the
+//  same list walk with a different entry layout (bank in w1 bits 14:12,
+//  {shadow-disable, priority, colour} in w2 bits 15:8, a signed 7-bit pitch
+//  in w2, hzoom in w4 bits 13:8, vzoom in w4 bits 5:0), 256 entries, and a
+//  32-bit ROM word carrying eight pixels in 128 KB banks. MAME draws whole
 //  sprites from live RAM with a per-sprite row-base accumulator (`addr`,
 //  advanced by pitch, doubled on zoom-ROM row skips) and a scratch fetch
 //  pointer (data[7]); the real chip is line-based. This renderer takes a
@@ -24,7 +29,8 @@ import sh_pkg::*;
 module sh_sprite (
     input             clk,
     input             reset,
-    input       [7:0] numbanks,     // descriptor: 64 KB banks, bank % numbanks
+    input       [7:0] numbanks,     // descriptor: 64 KB banks (128 KB on sharrier), bank % numbanks
+    input             sharrier,     // descriptor: SEGA_SHARRIER_SPRITES entry layout and 32-bit words
 
     // timing
     input             line_start,
@@ -33,7 +39,7 @@ module sh_sprite (
     input       [8:0] hcnt,
 
     // CPU sprite RAM read port (1-clock-registered address and output)
-    output reg  [9:0] cram_addr,
+    output reg [10:0] cram_addr,
     input      [15:0] cram_q,
     // zoom PROM (same cadence)
     output reg [12:0] zoom_addr,
@@ -59,19 +65,21 @@ wire       disp_bank = vcnt[0];
 wire       rend_bank = ~vcnt[0];
 
 // ---------------------------------------------------------------- private copy
-reg [15:0] copy [0:1023];
+reg [15:0] copy [0:2047];
 `ifdef SIMULATION
 integer ci;
 initial begin
-    for (ci = 0; ci < 1024; ci = ci + 1) copy[ci] = 16'd0;
+    for (ci = 0; ci < 2048; ci = ci + 1) copy[ci] = 16'd0;
     for (ci = 0; ci < 1024; ci = ci + 1) lb[ci] = 12'd0;
 end
 `endif
-reg  [9:0] copy_addr;
+reg [10:0] copy_addr;
 reg [15:0] copy_rq;
 reg        copy_we;
-reg  [9:0] copy_waddr;
+reg [10:0] copy_waddr;
 reg [15:0] copy_wdata;
+wire [11:0] copy_words = sharrier ? 12'd2048 : 12'd1024;
+wire  [7:0] last_entry = sharrier ? 8'd255 : 8'd127;
 always @(posedge clk) begin
     if (copy_we) copy[copy_waddr] <= copy_wdata;
     copy_rq <= copy[copy_addr];
@@ -86,10 +94,10 @@ st_t st;
 
 reg        copied;            // at least one list copy has run
 reg  [8:0] ry;
-reg [10:0] ccnt;              // copy counter
+reg [11:0] ccnt;              // copy counter
 reg [15:0] w3_hold;
 reg  [2:0] hcnt2;             // header read step
-reg  [6:0] entry;             // 0..127
+reg  [7:0] entry;             // 0..127 (0..255 on sharrier)
 reg [15:0] w0, w1, w2, w4, w7;
 reg  [8:0] xw;                // erase counter
 
@@ -101,27 +109,29 @@ reg [15:0] rowbase;
 reg        dir;
 reg [15:0] cur;
 reg  [3:0] bank_eff;
-reg  [1:0] nib;
+reg  [2:0] nib;
 reg  [8:0] xacc;
 reg signed [10:0] x;
-reg [15:0] word;
+reg [31:0] word;              // one 16-bit word (hangon) or one 32-bit word (sharrier)
 reg        word_valid;
-reg [11:0] colpri;            // {prio, colour, 0000}
+reg [11:0] colpri;            // {prio, colour, 0000} / {shadow_dis, prio, colour, 0000}
 reg  [7:0] hzoom;
 
-// burst cache
+// burst cache: 128 bits hold eight 16-bit words or four 32-bit ones
 reg        tag_valid;
-reg [15:0] tag;               // {bank, word[14:3]}
+reg [16:0] tag;               // {bank, word index above the burst}
 reg [127:0] burst;
 wire [15:0] next_cur = dir ? cur - 16'd1 : cur + 16'd1;
-wire [15:0] want_tag = {bank_eff, next_cur[14:3]};
-assign rom_addr = SDR_SPR_BASE[24:4] + {5'd0, bank_eff, next_cur[14:3]};
+wire [16:0] want_tag = sharrier ? {bank_eff, next_cur[14:2]} : {bank_eff, 1'b0, next_cur[14:3]};
+// hangon: 64 KB banks of 16-bit words; sharrier: 128 KB banks of 32-bit words
+assign rom_addr = SDR_SPR_BASE[24:4] + (sharrier ? {4'd0, bank_eff, next_cur[14:2]} : {5'd0, bank_eff, next_cur[14:3]});
 
-wire [5:0] vzoom = w4[7:2];
-wire [15:0] pitch = w2;
+wire  [5:0] vzoom = sharrier ? w4[5:0] : w4[7:2];
+wire [15:0] pitch = sharrier ? {{9{w2[6]}}, w2[6:0]} : w2;
+wire  [2:0] last_nib = sharrier ? 3'd7 : 3'd3;
 
 // current nibble (order depends on direction)
-wire [1:0] nsel = dir ? nib : 2'd3 - nib;
+wire [2:0] nsel = dir ? nib : last_nib - nib;
 wire [3:0] pix = word[{nsel, 2'b00} +: 4];
 wire [8:0] xacc_n = {1'b0, xacc[7:0]} + {1'b0, hzoom};
 
@@ -137,8 +147,8 @@ always @(posedge clk) begin
         S_IDLE: begin
             if (line_start) begin
                 if (vcnt == 9'd260) begin
-                    ccnt <= 11'd0;
-                    cram_addr <= 10'd0;
+                    ccnt <= 12'd0;
+                    cram_addr <= 11'd0;
                     st <= S_COPY;
                 end
                 else if (copied && ((vcnt == 9'd261) || (vcnt < 9'd223))) begin
@@ -155,24 +165,24 @@ always @(posedge clk) begin
         // the case-issued reads elsewhere that capture at +2). Word 7 of
         // each entry is initialised to its word 3 (MAME's data[7] = addr).
         S_COPY: begin
-            ccnt <= ccnt + 11'd1;
-            cram_addr <= ccnt[9:0] + 10'd1;
-            if (ccnt >= 11'd1) begin
+            ccnt <= ccnt + 12'd1;
+            cram_addr <= ccnt[10:0] + 11'd1;
+            if (ccnt >= 12'd1) begin
                 copy_we    <= 1'b1;
-                copy_waddr <= ccnt[9:0] - 10'd1;
+                copy_waddr <= ccnt[10:0] - 11'd1;
                 if (ccnt[2:0] == 3'd4) w3_hold <= cram_q;     // word 3 passing
                 copy_wdata <= (ccnt[2:0] == 3'd0) ? w3_hold : cram_q;  // word 7 slot
             end
-            if (ccnt == 11'd1024) begin copied <= 1'b1; st <= S_IDLE; end
+            if (ccnt == copy_words) begin copied <= 1'b1; st <= S_IDLE; end
         end
 
         S_ERASE: begin
             lb[{rend_bank, xw}] <= 12'd0;
             xw <= xw + 9'd1;
             if (xw == 9'd319) begin
-                entry <= 7'd0;
+                entry <= 8'd0;
                 hcnt2 <= 3'd0;
-                copy_addr <= 10'd0;
+                copy_addr <= 11'd0;
                 st <= S_HDR;
             end
         end
@@ -195,18 +205,19 @@ always @(posedge clk) begin
         S_DECIDE: begin
             if (w0[15:8] > 8'hF0) st <= S_LDONE;                 // end of list
             else if (!row_hit) begin
-                entry <= entry + 7'd1;
+                entry <= entry + 8'd1;
                 hcnt2 <= 3'd0;
-                copy_addr <= {entry + 7'd1, 3'd0};
-                if (entry == 7'd127) st <= S_LDONE;
+                copy_addr <= {entry + 8'd1, 3'd0};
+                if (entry == last_entry) st <= S_LDONE;
                 else st <= S_HDR;
             end
             else begin
                 ytop      <= w0[7:0];
                 zoom_addr <= {2'b00, vzoom[5:3], 8'd0} + {4'd0, yrow - {1'b0, w0[7:0]}};
-                colpri    <= {w4[1:0], w4[13:8], 4'd0};
-                hzoom     <= {1'b0, vzoom, 1'b0};
-                bank_eff  <= (w1[15:12] >= numbanks[3:0]) ? w1[15:12] - numbanks[3:0] : w1[15:12];
+                colpri    <= sharrier ? {w2[15:8], 4'd0} : {w4[1:0], w4[13:8], 4'd0};
+                hzoom     <= sharrier ? {1'b0, w4[13:8], 1'b0} : {1'b0, vzoom, 1'b0};
+                bank_eff  <= sharrier ? ((w1[14:12] >= numbanks[2:0]) ? {1'b0, w1[14:12] - numbanks[2:0]} : {1'b0, w1[14:12]})
+                                      : ((w1[15:12] >= numbanks[3:0]) ? w1[15:12] - numbanks[3:0] : w1[15:12]);
                 hcnt2     <= 3'd0;
                 st <= S_ZWAIT;
             end
@@ -230,7 +241,7 @@ always @(posedge clk) begin
             cur  <= a1[15] ? a1 + 16'd1 : a1 - 16'd1;
             x    <= $signed({2'b00, w1[8:0]}) - 11'sd189;
             xacc <= 9'd0;
-            nib  <= 2'd0;
+            nib  <= 3'd0;
             word_valid <= 1'b0;
             st <= S_ROW;
         end
@@ -238,16 +249,16 @@ always @(posedge clk) begin
         // start of a word: fetch it (cache hit or SDRAM burst)
         S_ROW: begin
             if (x > 11'sd319) begin                     // MAME's group re-entry check
-                entry <= entry + 7'd1;
+                entry <= entry + 8'd1;
                 hcnt2 <= 3'd0;
-                copy_addr <= {entry + 7'd1, 3'd0};
-                if (entry == 7'd127) st <= S_LDONE;
+                copy_addr <= {entry + 8'd1, 3'd0};
+                if (entry == last_entry) st <= S_LDONE;
                 else st <= S_HDR;
             end
             else if (tag_valid && tag == want_tag) begin
                 cur  <= next_cur;
-                word <= burst[{next_cur[2:0], 4'b0000} +: 16];
-                nib  <= 2'd0;
+                word <= sharrier ? burst[{next_cur[1:0], 5'b00000} +: 32] : {16'd0, burst[{next_cur[2:0], 4'b0000} +: 16]};
+                nib  <= 3'd0;
                 st <= S_PIX;
             end
             else begin
@@ -263,8 +274,8 @@ always @(posedge clk) begin
                 tag <= want_tag;
                 tag_valid <= 1'b1;
                 cur  <= next_cur;
-                word <= rom_dout[{next_cur[2:0], 4'b0000} +: 16];
-                nib  <= 2'd0;
+                word <= sharrier ? rom_dout[{next_cur[1:0], 5'b00000} +: 32] : {16'd0, rom_dout[{next_cur[2:0], 4'b0000} +: 16]};
+                nib  <= 3'd0;
                 st <= S_PIX;
             end
         end
@@ -277,17 +288,17 @@ always @(posedge clk) begin
                     lb[{rend_bank, x[8:0]}] <= {colpri[11:4], pix};
                 x <= x + 11'sd1;
             end
-            if (nib == 2'd3) begin
+            if (nib == last_nib) begin
                 if (pix == 4'd15) begin                 // end of row
-                    entry <= entry + 7'd1;
+                    entry <= entry + 8'd1;
                     hcnt2 <= 3'd0;
-                    copy_addr <= {entry + 7'd1, 3'd0};
-                    if (entry == 7'd127) st <= S_LDONE;
+                    copy_addr <= {entry + 8'd1, 3'd0};
+                    if (entry == last_entry) st <= S_LDONE;
                     else st <= S_HDR;
                 end
                 else st <= S_ROW;
             end
-            else nib <= nib + 2'd1;
+            else nib <= nib + 3'd1;
         end
 
         S_LDONE: st <= S_IDLE;

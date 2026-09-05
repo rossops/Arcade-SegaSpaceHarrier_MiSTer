@@ -41,6 +41,7 @@ module sh_core (
     input signed [7:0] stick_y,
     input       [7:0] throttle,
     input       [1:0] stick_mode,   // 0 analog, 1 d-pad, 2 both
+    input             stick_hold,   // 1: the stick keeps its last position when released (OSD "re-centering off")
     input       [1:0] ana_curve,
     input       [1:0] ana_range,
     input       [7:0] dsw_a, dsw_b,
@@ -154,20 +155,34 @@ assign hs = hsync;   assign vs = vsync;
 // PPI1 port A bit 6, active low, no acknowledge (MAME sub_control_adc_w).
 reg  m_irq4, vbl_d;
 wire m_iack;
+wire [2:0] mcu_ipl;              // the i8751's P1 bits 2:0, inverted (a pulse per frame)
+reg  [2:0] mcu_ipl_l;            // held until the 68000 acknowledges that level (MAME HOLD_LINE)
 always @(posedge clk_sys) begin
     vbl_d <= vbl_irq;
-    if (cpu_reset) m_irq4 <= 1'b0;
+    if (cpu_reset) begin m_irq4 <= 1'b0; mcu_ipl_l <= 3'd0; end
     else begin
         if (vbl_irq && !vbl_d && !board_desc.has_mcu) m_irq4 <= 1'b1;
-        if (m_iack && m_addr[3:1] == 3'd4) m_irq4 <= 1'b0;
+        if (m_iack && c_addr[3:1] == 3'd4) m_irq4 <= 1'b0;
+        if (mcu_ipl != 3'd0) mcu_ipl_l <= mcu_ipl;
+        else if (m_iack && c_addr[3:1] == mcu_ipl_l) mcu_ipl_l <= 3'd0;
     end
 end
-wire [2:0] ipl_m = m_irq4 ? 3'd4 : 3'd0;
+wire [2:0] ipl_m = board_desc.has_mcu ? mcu_ipl_l : (m_irq4 ? 3'd4 : 3'd0);
 wire [2:0] ipl_s = ~pa1_out[6] ? 3'd4 : 3'd0;
 
 wire cpu_reset = reset;
 
-// ================================================================ MAIN CPU
+// ================================================================ MAIN BUS
+// Two masters: the 68000 (c_*) and, on Space Harrier, the i8751 bridge.
+// The m_* signals are the bus as the decode sees it. The MCU takes the bus
+// the way a second master takes a 68000's: hold the CPU (fx68k's HALT
+// stops it at the end of its current cycle), run one byte cycle through
+// the same decode, release. The MCU paces itself and never spins on the
+// bus, so the added latency costs it nothing (docs/notes on the 8751).
+wire [23:1] c_addr;
+wire        c_valid, c_start, c_rd, c_wr;
+wire  [1:0] c_be;
+wire [15:0] c_dout;
 wire [23:1] m_addr;
 wire        m_valid, m_start, m_rd, m_wr;
 wire  [1:0] m_be;
@@ -178,35 +193,98 @@ wire  [2:0] m_fc;
 wire        m_as_n, s_as_n;
 wire        m_reset_out;     // RESET instruction -> sub CPU reset
 
+wire        mcu_req, mcu_wr;
+wire [23:0] mcu_baddr;
+wire  [7:0] mcu_bdout;
+reg   [7:0] mcu_bdin;
+reg         mcu_ack, mcu_hold, mcu_grant, mcu_start;
+reg   [4:0] mcu_hold_t;
+// fx68k samples HALT on its phase-1 enable and only then stops starting bus
+// cycles, so a cycle can still begin in the clocks after the hold goes up.
+// Granting on a momentary idle in that window put the MCU's address under
+// the 68000's own start pulse: the shared-RAM arbiter served the MCU with
+// the CPU's request and the CPU waited forever (the M7 sub-RAM deadlock).
+// Two CPU clocks after the hold, an idle bus is a halted bus.
+//
+// The one write the bridge drops: the MCU's reset routine zeroes 040385
+// twice, about 280 ms after reset (its own ROM checksum and a delay loop
+// come first; jt8051 and a hand count of the 8751's cycle times agree).
+// The 68000 clears that byte at boot too, then writes its heartbeat 0x5A
+// there once, at 170 ms, and never again: the MCU's zeros land second and
+// the heartbeat is gone. The MCU's watcher then counts 30 frames of zero
+// once its main loop starts and switches to a fallback that stops
+// sampling the stick (the six bytes at 040492 become a fixed table; the
+// game reads them as a stick pinned to one corner). MAME suppresses the
+// same write for the same reason. The disassembly shows no other MCU
+// write to that byte, so dropping it costs nothing else. How the real
+// board orders the two is an open question (docs/DESIGN.md, M7).
+wire mcu_drop = mcu_wr && (mcu_baddr == 24'h040385);
+always @(posedge clk_sys) begin
+    mcu_start <= 1'b0; mcu_ack <= 1'b0;
+    if (cpu_reset) begin mcu_hold <= 1'b0; mcu_grant <= 1'b0; mcu_bdin <= 8'hFF; mcu_hold_t <= 5'd0; end
+    else begin
+        if (mcu_req && !mcu_ack && !mcu_hold && mcu_drop) mcu_ack <= 1'b1;                       // taken, went nowhere
+        else if (mcu_req && !mcu_ack && !mcu_hold) begin mcu_hold <= 1'b1; mcu_hold_t <= 5'd0; end   // ask the 68000 to stop
+        else if (mcu_hold && mcu_hold_t != 5'd31) mcu_hold_t <= mcu_hold_t + 5'd1;
+        if (mcu_hold && mcu_hold_t >= 5'd20 && !mcu_grant && !c_valid && !c_start && mcu_req && !mcu_ack) begin
+            mcu_grant <= 1'b1; mcu_start <= 1'b1;                              // it is off the bus for good: one cycle
+        end
+        if (mcu_grant && m_ack && !mcu_start) begin
+            mcu_grant <= 1'b0; mcu_hold <= 1'b0; mcu_ack <= 1'b1;
+            mcu_bdin <= mcu_baddr[0] ? m_din[7:0] : m_din[15:8];
+        end
+    end
+end
+assign m_addr  = mcu_grant ? mcu_baddr[23:1] : c_addr;
+assign m_valid = mcu_grant ? 1'b1 : c_valid;
+assign m_start = mcu_grant ? mcu_start : c_start;
+assign m_rd    = mcu_grant ? ~mcu_wr : c_rd;
+assign m_wr    = mcu_grant ?  mcu_wr : c_wr;
+assign m_be    = mcu_grant ? (mcu_baddr[0] ? 2'b01 : 2'b10) : c_be;   // {UDS, LDS}: odd byte = low lane
+assign m_dout  = mcu_grant ? {mcu_bdout, mcu_bdout} : c_dout;
+
 sh_m68k_bus main_cpu (
     .clk(clk_sys), .reset(cpu_reset), .enphi1(enphi1), .enphi2(enphi2),
-    .ipl(ipl_m), .halt_n(1'b1),
-    .bus_addr(m_addr), .bus_valid(m_valid), .bus_start(m_start),
-    .bus_rd(m_rd), .bus_wr(m_wr), .bus_be(m_be),
-    .bus_dout(m_dout), .bus_din(m_din), .bus_ack(m_ack),
+    .ipl(ipl_m), .halt_n(~mcu_hold),
+    .bus_addr(c_addr), .bus_valid(c_valid), .bus_start(c_start),
+    .bus_rd(c_rd), .bus_wr(c_wr), .bus_be(c_be),
+    .bus_dout(c_dout), .bus_din(m_din), .bus_ack(m_ack && !mcu_grant),
     .reset_out(m_reset_out), .iack(m_iack), .fc(m_fc), .bus_as_n(m_as_n)
 );
-assign trace_main_addr = m_addr; assign trace_main_start = m_start; assign trace_main_fc = m_fc;
+assign trace_main_addr = c_addr; assign trace_main_start = c_start; assign trace_main_fc = m_fc;
 
-// main decode, hangon map (MAME hangon_map; unmapped reads FFFF). The
-// sharrier map is a descriptor-selected second decode in M7.
+// ---- the i8751 (sharrier sets only; held in reset elsewhere)
+sh_mcu mcu (
+    .clk(clk_sys), .reset(reset | ~board_desc.has_mcu), .ce_8m(ce_8m), .vblank(vblank),
+    .rom_wr(brm_wr && brm_addr >= OFF_MCU && brm_addr < OFF_MCU + 27'h1000),
+    .rom_addr(12'(brm_addr - OFF_MCU)), .rom_din(brm_din),
+    .bus_req(mcu_req), .bus_addr(mcu_baddr), .bus_wr(mcu_wr), .bus_dout(mcu_bdout),
+    .bus_din(mcu_bdin), .bus_ack(mcu_ack),
+    .ipl(mcu_ipl)
+);
+
+// main decode: the hangon map (MAME hangon_map) or, by the descriptor, the
+// sharrier map (sharrier_map: Space Harrier and Enduro Racer). Unmapped
+// reads FFFF; every write is acknowledged.
 wire [23:1] ma = m_addr;
-wire m_sel_rom    = (ma[23:18] == 6'h00);          // 000000-03FFFF
-wire m_sel_wram   = (ma[23:14] == 10'h083);        // 20C000-20FFFF work RAM
-wire m_sel_tile   = (ma[23:14] == 10'h100);        // 400000-403FFF tile RAM
-wire m_sel_text   = (ma[23:12] == 12'h410);        // 410000-410FFF text RAM
-wire m_sel_spr    = (ma[23:11] == 13'h0C00);       // 600000-6007FF sprite RAM
-wire m_sel_pal    = (ma[23:12] == 12'hA00);        // A00000-A00FFF palette RAM
-wire m_sel_subrom = (ma[23:18] == 6'h30);          // C00000-C3FFFF the sub CPU's ROM
-wire m_sel_road   = (ma[23:12] == 12'hC68);        // C68000-C68FFF road RAM (shared)
-wire m_sel_subram = (ma[23:14] == 10'h31F);        // C7C000-C7FFFF sub RAM (shared)
-// E00000-FFFFFF: PPI0 / inputs / PPI1 / ADC, low byte, mirror 1FCFD8
-// (significant bits A13:12, A5, A2:1)
-wire m_sel_iozone = (ma[23:21] == 3'b111);
-wire m_sel_ppi0   = m_sel_iozone && (ma[13:12] == 2'b00);
-wire m_sel_inputs = m_sel_iozone && (ma[13:12] == 2'b01);
-wire m_sel_ppi1   = m_sel_iozone && (ma[13:12] == 2'b11) && !ma[5];
-wire m_sel_adc    = m_sel_iozone && (ma[13:12] == 2'b11) &&  ma[5];
+wire shm = board_desc.sharrier_vid;
+wire m_sel_rom    = (ma[23:18] == 6'h00);                                             // 000000-03FFFF
+wire m_sel_wram   = shm ? (ma[23:14] == 10'h010) : (ma[23:14] == 10'h083);            // 040000 / 20C000, 16 KB
+wire m_sel_tile   = shm ? (ma[23:15] ==  9'h020) : (ma[23:14] == 10'h100);            // 100000 32 KB / 400000 16 KB
+wire m_sel_text   = shm ? (ma[23:12] == 12'h108) : (ma[23:12] == 12'h410);            // 108000 / 410000, 4 KB
+wire m_sel_spr    = shm ? (ma[23:12] == 12'h130) : (ma[23:11] == 13'h0C00);           // 130000 4 KB / 600000 2 KB
+wire m_sel_pal    = shm ? (ma[23:12] == 12'h110) : (ma[23:12] == 12'hA00);            // 110000 / A00000, 4 KB
+wire m_sel_subrom = !shm && (ma[23:18] == 6'h30);                                     // C00000-C3FFFF, hangon only
+wire m_sel_road   = (ma[23:12] == 12'hC68);                                           // C68000-C68FFF road RAM (shared)
+wire m_sel_subram = shm ? (ma[23:14] == 10'h049) : (ma[23:14] == 10'h31F);            // 124000 / C7C000, 16 KB (shared)
+// I/O: hangon E00000-FFFFFF (PPI0 / inputs / PPI1 / ADC on A13:12, A5,
+// mirror 1FCFD8); sharrier 140000-14FFFF (PPI0 +00, inputs +10, PPI1 +20,
+// ADC +31 on A5:4, mirror FFC8)
+wire m_sel_iozone = shm ? (ma[23:16] == 8'h14) : (ma[23:21] == 3'b111);
+wire m_sel_ppi0   = m_sel_iozone && (shm ? (ma[5:4] == 2'b00) : (ma[13:12] == 2'b00));
+wire m_sel_inputs = m_sel_iozone && (shm ? (ma[5:4] == 2'b01) : (ma[13:12] == 2'b01));
+wire m_sel_ppi1   = m_sel_iozone && (shm ? (ma[5:4] == 2'b10) : (ma[13:12] == 2'b11) && !ma[5]);
+wire m_sel_adc    = m_sel_iozone && (shm ? (ma[5:4] == 2'b11) : (ma[13:12] == 2'b11) &&  ma[5]);
 wire m_sel_shared = m_sel_road | m_sel_subram;
 
 reg m_ram_rdy;
@@ -243,13 +321,15 @@ wire [15:0] m_wram_q, tile_q, text_q, spr_q, pal_q;
 sh_dpram #(.AW(13)) work_ram (.clk(clk_sys), .a_addr(ma[13:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_wram && m_start), .a_dout(m_wram_q),
     .b_clk(clk_sys), .b_addr(13'd0), .b_dout());
-sh_dpram #(.AW(13)) tileram (.clk(clk_sys), .a_addr(ma[13:1]), .a_din(m_dout), .a_be(m_be),
+// tile RAM: 32 KB on the sharrier map (the tilemap reads the first 16 KB),
+// 16 KB on hangon's; sprite RAM 4 KB (256 entries) / 2 KB (128)
+sh_dpram #(.AW(14)) tileram (.clk(clk_sys), .a_addr(shm ? ma[14:1] : {1'b0, ma[13:1]}), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_tile && m_start), .a_dout(tile_q),
-    .b_clk(clk_sys), .b_addr(tm_tile_addr), .b_dout(tm_tile_q));
+    .b_clk(clk_sys), .b_addr({1'b0, tm_tile_addr}), .b_dout(tm_tile_q));
 sh_dpram #(.AW(11)) textram (.clk(clk_sys), .a_addr(ma[11:1]), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_text && m_start), .a_dout(text_q),
     .b_clk(clk_sys), .b_addr(tm_text_addr), .b_dout(tm_text_q));
-sh_dpram #(.AW(10)) spriteram (.clk(clk_sys), .a_addr(ma[10:1]), .a_din(m_dout), .a_be(m_be),
+sh_dpram #(.AW(11)) spriteram (.clk(clk_sys), .a_addr(shm ? ma[11:1] : {1'b0, ma[10:1]}), .a_din(m_dout), .a_be(m_be),
     .a_we(m_valid && m_wr && m_sel_spr && m_start), .a_dout(spr_q),
     .b_clk(clk_sys), .b_addr(sp_cram_addr), .b_dout(sp_cram_q));
 // 2048 words of the 315-5242-style palette + resistor DAC (the hangon
@@ -339,13 +419,19 @@ wire sub_res = pa1_out[5];   // 1 = sub CPU held in reset
 wire [7:0] in_service = ~{p1_buttons[11], p1_buttons[12], 1'b0, p1_buttons[6],
                           service | p1_buttons[10],
                           test | p1_buttons[9], coin2, coin1 | p1_buttons[7]};
+// sharrier SERVICE (sharrier_generic + sharrier): 7 Fire 3, 6 Fire 2,
+// 5 Fire 1, 4 Start, 3 Service, 2 Test, 1 Coin 2, 0 Coin 1 (J1: 4 Fire 1,
+// 5 Fire 2, 6 Fire 3, 7 Start, 8 Coin, 9 Pause, 10 Test, 11 Service)
+wire [7:0] in_service_sh = ~{p1_buttons[6], p1_buttons[5], p1_buttons[4], p1_buttons[7],
+                             service | p1_buttons[11], test | p1_buttons[10],
+                             coin2, coin1 | p1_buttons[8]};
 reg [7:0] inputs_q;
 always @* begin
     case (ma[2:1])
-        2'd0: inputs_q = in_service;
-        2'd1: inputs_q = dsw_a;      // COINAGE = SW A
-        2'd2: inputs_q = dsw_b;      // DSW = SW B
-        2'd3: inputs_q = 8'hFF;
+        2'd0: inputs_q = shm ? in_service_sh : in_service;
+        2'd1: inputs_q = shm ? 8'hFF : dsw_a;   // hangon: COINAGE = SW A; sharrier: unused
+        2'd2: inputs_q = shm ? dsw_a : dsw_b;   // hangon: DSW = SW B; sharrier: COINAGE
+        2'd3: inputs_q = shm ? dsw_b : 8'hFF;   // sharrier: DSW
     endcase
 end
 
@@ -376,12 +462,39 @@ sh_ana_shape shape_t (.clk(clk_sys), .axis(throttle ^ 8'h80), .curve(ana_curve),
 wire [7:0] throttle_s = thr_s ^ 8'h80;
 wire use_analog = (stick_mode != 2'd1);
 wire use_dpad   = (stick_mode != 2'd0);
-wire signed [7:0] in_x = (use_dpad && p1_buttons[0]) ? 8'sd127 :
-                         (use_dpad && p1_buttons[1]) ? -8'sd127 :
-                         use_analog ? sx_s : 8'sd0;
-wire signed [7:0] in_y = (use_dpad && p1_buttons[2]) ? 8'sd127 :
-                         (use_dpad && p1_buttons[3]) ? -8'sd127 :
-                         use_analog ? sy_s : 8'sd0;
+wire signed [7:0] in_x_now = (use_dpad && p1_buttons[0]) ? 8'sd127 :
+                             (use_dpad && p1_buttons[1]) ? -8'sd127 :
+                             use_analog ? sx_s : 8'sd0;
+wire signed [7:0] in_y_now = (use_dpad && p1_buttons[2]) ? 8'sd127 :
+                             (use_dpad && p1_buttons[3]) ? -8'sd127 :
+                             use_analog ? sy_s : 8'sd0;
+// The arcade sticks spring back to centre and the game positions the
+// player from the deflection, so releasing the stick re-centres the
+// Harrier (or the bike). With re-centering off the stick is a held
+// position instead: a d-pad direction walks it 8 counts a frame and
+// stops where it is released, an analog deflection past the dead zone
+// sets it directly and letting go leaves it there.
+reg signed [7:0] hold_x, hold_y;
+reg        vbl_h_d;
+function automatic signed [7:0] walk(input signed [7:0] pos, input signed [7:0] now, input analog);
+    reg signed [8:0] n;
+    begin
+        if (now == 8'sd127)       begin n = pos + 9'sd8;  walk = (n > 9'sd127) ? 8'sd127 : n[7:0]; end
+        else if (now == -8'sd127) begin n = pos - 9'sd8;  walk = (n < -9'sd127) ? -8'sd127 : n[7:0]; end
+        else if (analog && (now > 8'sd8 || now < -8'sd8)) walk = now;
+        else walk = pos;
+    end
+endfunction
+always @(posedge clk_sys) begin
+    vbl_h_d <= vbl_irq;
+    if (cpu_reset) begin hold_x <= 8'sd0; hold_y <= 8'sd0; end
+    else if (vbl_irq && !vbl_h_d) begin
+        hold_x <= walk(hold_x, in_x_now, use_analog);
+        hold_y <= walk(hold_y, in_y_now, use_analog);
+    end
+end
+wire signed [7:0] in_x = stick_hold ? hold_x : in_x_now;
+wire signed [7:0] in_y = stick_hold ? hold_y : in_y_now;
 reg signed [7:0] wheel;
 reg        vbl_w_d;
 wire signed [8:0] wheel_d = {in_x[7], in_x} - {wheel[7], wheel};
@@ -594,10 +707,10 @@ sh_zoomrom zoomrom (
     .wr(zoom_brm), .wr_addr(13'(brm_addr - OFF_ZOOM)), .wr_data(brm_din),
     .rd_addr(sp_zoom_addr), .q(sp_zoom_q)
 );
-wire  [9:0] sp_cram_addr; wire [15:0] sp_cram_q;
+wire [10:0] sp_cram_addr; wire [15:0] sp_cram_q;
 wire [11:0] spr_pix;
 sh_sprite sprites (
-    .clk(clk_sys), .reset(reset), .numbanks(board_desc.spr_banks),
+    .clk(clk_sys), .reset(reset), .numbanks(board_desc.spr_banks), .sharrier(shm),
     .line_start(line_start), .vcnt(vcnt), .ce_pix(ce_pix), .hcnt(hcnt),
     .cram_addr(sp_cram_addr), .cram_q(sp_cram_q),
     .zoom_addr(sp_zoom_addr), .zoom_q(sp_zoom_q),
@@ -619,12 +732,16 @@ wire  [3:0] mark = {tx_op,
                     fg_op & fg_pix[10],
                     (fg_op & ~fg_pix[10]) | (bg_op & bg_pix[10]),
                     bg_op & ~bg_pix[10]};
+// sharrier (screen_update's m_sharrier_video branch): the sprite pixel is
+// {shadow_disable, priority, colour[5:0], pen}; its level is 3 or 1 from
+// the one priority bit, the shadow is pen 10 with shadow-disable clear,
+// and the board has a single effect bank
 wire        spr_op = spr_pix[3:0] != 4'd0;
-wire  [3:0] sprlvl = 4'd1 << spr_pix[11:10];
+wire  [3:0] sprlvl = shm ? (spr_pix[10] ? 4'd8 : 4'd2) : (4'd1 << spr_pix[11:10]);
 wire        spr_wins = spr_op && (sprlvl > mark);
-wire        spr_shadow = spr_wins && (spr_pix[9:4] == 6'h3F);
+wire        spr_shadow = spr_wins && (shm ? (!spr_pix[11] && spr_pix[3:0] == 4'd10) : (spr_pix[9:4] == 6'h3F));
 wire        shade_hilight = ~pb0_out[6];
-wire  [1:0] eff_force = shade_hilight ? 2'd2 : 2'd1;
+wire  [1:0] eff_force = (shade_hilight && !shm) ? 2'd2 : 2'd1;
 wire [10:0] base_idx = tx_op ? {5'd0, tx_pix[5:0]} :
                        (road_under && fg_op) ? {1'b0, fg_pix[9:0]} :
                        (road_under && bg_op) ? {1'b0, bg_pix[9:0]} :

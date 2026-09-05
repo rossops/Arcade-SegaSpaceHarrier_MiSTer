@@ -20,6 +20,18 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/sh_sprite.sv
 # HANGON/SHARRIER sprite generators and the mixer (M4/M7).
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_m68k_bus.sv
+# Space Harrier's i8751: jotego's jt8051 (rtl/cpu/jt8051, generated microcode includes alongside)
+set_global_assignment -name SEARCH_PATH rtl/cpu/jt8051
+# the microcode image jt8051.vh $readmemb's (a trailing comment on an assignment
+# line is an argument to Tcl, not a comment, and kills every build)
+set_global_assignment -name MIF_FILE rtl/cpu/jt8051/jt8051.uc
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_mcu.sv
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_alu.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_ctrl.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_periph.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_regs.v
+set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_serial.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_rom_cache.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/io/sh_ana_shape.sv

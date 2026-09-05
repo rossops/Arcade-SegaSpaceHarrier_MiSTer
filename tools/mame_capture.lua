@@ -55,6 +55,7 @@ emu.register_frame_done(function()
         dump(main, 0x108000, 0x800,  outdir .. "/textram.bin")
         dump(main, 0x110000, 0x800,  outdir .. "/paletteram.bin")
         dump(main, 0x130000, 0x800,  outdir .. "/spriteram.bin")
+        dump(main, 0x040000, 0x2000, outdir .. "/workram.bin")
     else
         dump(main, 0x20C000, 0x2000, outdir .. "/workram.bin")
         dump(main, 0x400000, 0x2000, outdir .. "/tileram.bin")
@@ -66,7 +67,8 @@ emu.register_frame_done(function()
     -- PPI0 port B/C drive the video path (flip, shade, display enable,
     -- tilemap row/column scroll enables); read the latches back
     local f = io.open(outdir .. "/ppi.txt", "w")
-    f:write(string.format("%d\n%d\n", main:read_u8(0xE00003), main:read_u8(0xE00005)))
+    local ppi = sharrier_map and 0x140000 or 0xE00000
+    f:write(string.format("%d\n%d\n", main:read_u8(ppi + 3), main:read_u8(ppi + 5)))
     f:close()
     f = io.open(outdir .. "/frame.txt", "w"); f:write(tostring(frame) .. "\n"); f:close()
     manager.machine.video:snapshot()

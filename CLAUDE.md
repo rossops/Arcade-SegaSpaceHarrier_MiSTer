@@ -47,8 +47,9 @@ every convention below, and their git history shows what each decision cost.
   6,5,4,3 as A20,A18,A17,A16 | its 16-bit address, with A0 inverted);
   port 1 bits 2:0 drive the main CPU's IPL; it gets IRQ0 from vblank; it
   writes 0x1c to 150000 in its vblank handler and reads 170000, both
-  ignored by MAME; MAME suppresses its write to 40385 as a sync hack —
-  understand that race, do not blind-copy it.
+  ignored by MAME; MAME suppresses its write to 40385 as a sync hack; so do we,
+  after measuring the race (docs/DESIGN.md M7: the MCU's reset zeros land
+  110 ms after the 68000's one-shot heartbeat, on our side and MAME's).
 - Encryption: `enduror` FD1089B 317-0013A on the main CPU (table decrypt,
   keys in MAME); `shangonro`/`shangonho` FD1094 317-0038/0039 on the sub.
 - Sets: hangon (+hangon1, hangon2 ride-on), sharrier (+sharrier1), enduror
@@ -103,6 +104,9 @@ every convention below, and their git history shows what each decision cost.
   `$readmemh` files must be registered in `files.qip` as `MIF_FILE` with a
   `SEARCH_PATH` — files.qip is `source`d by the qsf, so `$::quartus(qip_path)`
   does not exist there and using it kills every build at the Tcl line.
+  Same for a trailing `# comment` on an assignment line: Tcl reads it as
+  extra arguments, the assignment fails, and the flow stops with no
+  output_files at all (cost a build on 2026-09-03).
 - Upload with `tools/mister_ssh.sh put|run` (DE10-Nano at 192.168.1.63,
   root; password known to the user). Ship split clone zips
   (`tools/make_clone_zips.py`), not merged ones. For many files, tar with

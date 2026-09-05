@@ -7,6 +7,25 @@ set_multicycle_path -to {*_osd|pixcnt*} -hold 1
 set_multicycle_path -to {*_osd|multiscan*} -setup 2
 set_multicycle_path -to {*_osd|multiscan*} -hold 1
 
+# Space Harrier's i8751 (jt8051) runs on the 8 MHz enable, one clock in six
+# or seven (the accumulator in sh_core), and every register in it is gated by
+# that enable; the core itself insists on an idle clock between pulses. Its
+# register-to-register paths therefore have two clocks, which its ALU needs
+# (24 levels, about 24 ns against a 19.9 ns period). The bridge's per-clock
+# registers in sh_mcu are outside the pattern and stay single-cycle.
+set mcu_regs [get_registers -nowarn {*|jt8051:mcu|*}]
+# ...and the enable-gated internal RAM and its read register in sh_mcu, which
+# the ALU addresses and feeds on the same enable (the second build's worst path)
+set mcu_ram  [get_registers -nowarn {*|sh_mcu:mcu|*iram* *|sh_mcu:mcu|ram_q[*]}]
+if {[get_collection_size $mcu_regs] > 0} {
+    set_multicycle_path -from $mcu_regs -to $mcu_regs -setup 2
+    set_multicycle_path -from $mcu_regs -to $mcu_regs -hold 1
+    if {[get_collection_size $mcu_ram] > 0} {
+        set_multicycle_path -from $mcu_regs -to $mcu_ram -setup 2
+        set_multicycle_path -from $mcu_regs -to $mcu_ram -hold 1
+    }
+}
+
 # Objects below only exist after fit; warn during quartus_map, fail in STA.
 proc sh_require {present what} {
     if {$present} { return 1 }

@@ -136,6 +136,7 @@ localparam CONF_STR = {
     "O[9:8],Stick,D-Pad,Analog,Analog+D-Pad;",
     "O[24:23],Analog response,Linear,Soft,Softer;",
     "O[26:25],Analog range,100%,75%,50%;",
+    "O[27],Stick re-centering,On,Off;",
     "O[10],Pause when OSD open,Off,On;",
     "-;",
     "DIP;",
@@ -269,14 +270,23 @@ sdram sdram (
 );
 
 //////////////////////////////   INPUTS   /////////////////////////////////////
-// joystick bits (MRA J1 order): 0 right 1 left 2 down 3 up 4 gas 5 brake
-// 6 start 7 coin 8 pause 9 test 10 service. One layout for now; the
-// per-game lists arrive with their games (M6/M7).
+// joystick bits (MRA J1 order): 0 right 1 left 2 down 3 up, then the set's
+// button list from tools/romsets.py. Hang-On and the Enduro/Super Hang-On
+// conversions: 4 gas 5 brake 6 start 7 coin 8 pause 9 test 10 service.
+// Space Harrier has three fire buttons first: 4-6 fire 7 start 8 coin
+// 9 pause 10 test 11 service. The descriptor's sharrier_vid picks the
+// layout for the four buttons the top itself consumes (the core takes the
+// rest per map).
 // OSD order D-Pad, Analog, Analog+D-Pad; the core encodes 0 analog, 1 d-pad, 2 both
 wire [1:0] stick_mode = (status[9:8] == 2'd0) ? 2'd1 : (status[9:8] == 2'd1) ? 2'd0 : 2'd2;
 
 wire [15:0] p1_btn = joystick_0[15:0];
-wire pause = p1_btn[8] | (status[10] & OSD_STATUS);
+wire        sh_btns   = board_desc.sharrier_vid;
+wire        btn_coin  = sh_btns ? p1_btn[8]  : p1_btn[7];
+wire        btn_pause = sh_btns ? p1_btn[9]  : p1_btn[8];
+wire        btn_test  = sh_btns ? p1_btn[10] : p1_btn[9];
+wire        btn_serv  = sh_btns ? p1_btn[11] : p1_btn[10];
+wire pause = btn_pause | (status[10] & OSD_STATUS);
 
 //////////////////////////////   CORE   ///////////////////////////////////////
 wire  [7:0] r, g, b;
@@ -295,11 +305,11 @@ sh_core core (
     .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),
     .p1_buttons(p1_btn),
     .stick_x(joystick_l_analog_0[7:0]), .stick_y(joystick_l_analog_0[15:8]),
-    .throttle(joystick_r_analog_0[15:8] ^ 8'h80), .stick_mode(stick_mode),
+    .throttle(joystick_r_analog_0[15:8] ^ 8'h80), .stick_mode(stick_mode), .stick_hold(status[27]),
     .ana_curve(status[24:23]), .ana_range(status[26:25]),
     .dsw_a(dsw_a), .dsw_b(dsw_b),
-    .service(p1_btn[10]), .test(status[7] | p1_btn[9]),
-    .coin1(p1_btn[7]), .coin2(1'b0),
+    .service(btn_serv), .test(status[7] | btn_test),
+    .coin1(btn_coin), .coin2(1'b0),
     .r(r), .g(g), .b(b),
     .ce_vid(ce_pix), .hs(hs), .vs(vs), .hb(hb), .vb(vb),
     .audio_l(aud_l), .audio_r(aud_r),

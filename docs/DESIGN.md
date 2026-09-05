@@ -404,6 +404,15 @@ DIPs come from MAME's port definitions per set; the SERVICE-port oddities
 (Enduro's start on bit 6, Space Harrier's three buttons, the ride-on foot
 switches) live in the MRA button lists.
 
+OSD stick options: Stick (D-Pad, Analog, Analog+D-Pad), the response
+curve and range from the parents, and since M7 "Stick re-centering"
+(default On). On is the arcade stick: it springs back to centre and the
+game positions the player from the deflection, so letting go re-centres
+the Harrier. Off makes the stick a held position: a d-pad direction walks
+it 8 counts a frame and stops where it is released, an analog deflection
+past the dead zone sets it and letting go leaves it there (the user's
+request after the first playable Space Harrier build, 2026-09-05).
+
 ### Verification tooling
 
 Everything carries over: `mame_capture.py`/`frame_diff.py`,
@@ -431,6 +440,7 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M5 | Sound: jt03 + 315-5218 at 8 MHz + the mode-2 latch path, mute, Z80 reset | PCM cocotb exact; attract envelope correlation >= 0.9 vs MAME recording (planned 0.95; passed at 0.94 — the per-second residual is spread evenly through the music with no structured outlier, so it reads as SSG/FM fine-structure phase, not a chaseable bug; see M5 findings) |
 | M6 | Hardware bring-up: Hang-On playable, controls, DIPs, OSD, timing closure (no NVRAM on this board), `hangon1/2/vf` clones | STA clean; 30 min attract; user's hardware checklist |
 | M7 | Space Harrier: sharrier map + 10 MHz enables, SHARRIER sprites (x32 fetch), road/mixer/palette variants, MCS-51 + bridge — a full main-bus master per the 8751 contract in docs/notes, and the game's only main-CPU interrupt source | sharrier boots through the MCU in the bench; frames vs MAME; plays on hardware |
+| M7b (optional) | Space Harrier gamepad feel: the d-pad as MAME drives an analog port from keys (keydelta 4 a frame toward the edge, the same rate back to centre when released) instead of the instant full deflection; possibly a rate option and the same for Hang-On's steering | plays comfortably on a gamepad (the user's call); the frame-900 gate unchanged since the attract mode ignores the stick |
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
 | M10 (optional) | Board reference for porters and emulator devs: recover the real PAL/PLS equations from the dumped fuse maps (315-5118/5119/5120, 315-5103, 315-5121) with MAME's jedutil and check them against our decode — worth pulling earlier if they answer an open question; then a curated hardware write-up with block diagrams (buses, arbitration, clocks, resets, per-line renderer timing), the sound byte-stream protocol, and the i8751 contract, every claim labelled primary-source or verified-reconstruction. No pinouts or analog values we cannot verify; cite the service manual for those | equations match or correct the RTL's decode; the doc stands alone for someone porting the core without this repo |
@@ -664,7 +674,12 @@ anything that only exists on the hardware side of the loader
 (stream slot sizes, wrap arithmetic, side-channel writes) has no
 gate. M7 puts the i8751's ROM through the same path, so a loader
 unit test that plays a synthetic stream into sh_rom_loader and
-checks what lands where is due before then.
+checks what lands where is due before then. (Done in M7:
+verif/unit/loader/test_rom_loader.py plays the first and last word of
+every slot, checks the SDRAM address and the BRAM strobe for each, the
+Z80 dual write, that nothing past OFF_END is taken, the descriptor
+fields for two sets loaded back to back, and that sh_pkg's OFF_*
+constants equal the pack tool's slot table.)
 
 With the ROM loading properly the sound came back, and the next
 race brought a third failure with a very different signature: not
@@ -849,6 +864,165 @@ board check against its own MAME capture at frame 300, first try —
 the core needed nothing beyond the foot-switch wire, which is what a
 scaffold three boards deep is for. The 30-minute attract soak and
 the control-feel checklist stay on the user's bench.
+
+M7 plan (sharrier, sharrier1). Started 2026-09-03 on branch m7-sharrier,
+straight after the M6 release. What the milestone has to deliver and
+in what order:
+
+1. Sets and goldens: `sharrier` and `sharrier1` in romsets.py (done, the
+   tool tests check every CRC against the zips), MRAs generated, golden
+   hexes packed, MAME attract captures at frames 900/1500/2400 (frame
+   300 is still the black boot screen: the MCU's ROM checksum takes a
+   while).
+2. The MCS-51: jotego's jt8051 (jtcores, GPL-3, 2026, verified there
+   against Bionic Commando's 8751), vendored under rtl/cpu/jt8051 with
+   its two generated microcode includes; `jtframe ucode` produced them
+   from ucode/8051.yaml and the command is recorded next to the files.
+   It runs on the core's 8 MHz enable (twelve pulses per machine cycle,
+   with the idle clock between pulses the core insists on), 4 KB
+   internal ROM in BRAM from the stream's MCU slot, 128 bytes of
+   internal RAM, INT0 from vblank.
+3. The bridge (rtl/cpu/sh_mcu_bridge.sv): the 8751's MOVX bus is a full
+   master on the main 68000 bus per the contract in docs/notes. Window
+   from P1 bits 6,5,4,3 onto A20,A18,A17,A16 with A19 forced low, the
+   16-bit MOVX address with A0 inverted, one byte per access. It takes
+   the bus the way a second master takes a 68000's: hold the 68000 (the
+   wrapper's halt line, fx68k's HALT, which stops the CPU at the end of
+   its current bus cycle), run the byte access through the same decode
+   the 68000 uses, release. The MCU paces itself with settle delays and
+   double reads, so the extra latency is nothing to it. P1 bits 2:0,
+   inverted, are the 68000's IPL: the only level the program ever drives
+   is 4, once per vblank, and it is latched and cleared on the 68000's
+   interrupt acknowledge, not on the MCU's release. The main CPU's own
+   vblank interrupt is disabled on sets with an MCU (MAME does the
+   same); the MCU is its only interrupt source.
+4. The sharrier main decode, descriptor-selected next to the hangon one:
+   work RAM at 040000, tile RAM 32 KB at 100000 (the tilemap reads the
+   first 16 KB), text at 108000, palette at 110000, sub RAM at 124000,
+   sprite RAM 4 KB at 130000, PPI0/inputs/PPI1/ADC at 140000 in the
+   sharrier order, road RAM at C68000, the two MCU no-op windows.
+5. Video: SEGA_SHARRIER_SPRITES (32-bit fetch, eight pixels a word,
+   128 KB banks, 6-bit colour, 6-bit zooms through the same zoom ROM)
+   as a variant of the line renderer; the road's SHARRIER bit is
+   already in; the palette's two-bank (normal/shadow) arrangement.
+6. Gate, check_m7.sh: the bench boots sharrier through the MCU (the
+   checksum passes, IRQ 4 arrives, the game runs), frames 900/1500/2400
+   match MAME layer by layer, and a tap logs any MCU zero-write to 40385
+   after the 68000's first heartbeat. Then hardware.
+
+M7 findings so far (2026-09-03, in progress). The MCU came up on the
+first run that had its microcode: jt8051's generated files are three,
+not two - the includes and a `.uc` image the core `$readmemb`s - and
+the bench's first boot with the image missing sat silent for 53
+frames, so that file is now vendored, symlinked into the bench's out
+directory and registered for Quartus the way this project registers
+every `$readmem` file. With it, the 315-5163A program does exactly
+what the disassembly said: the internal self-check, the 0x2D-byte
+block write into the palette window, the two zero writes to 40385 at
+frame 17 (long before the 68000's first heartbeat, so no race), then
+the main-ROM checksum. That loop samples two bytes of every eight and
+double-reads each with a delay call between, about 112 machine
+cycles per iteration over 32K iterations, and our MCU finished it at
+frame 523; MAME's screen is still black at 450 and running by 600,
+so the two agree. The first IRQ 4 reached the 68000 the same frame
+and it began streaming sound-latch bytes at once.
+
+Two frames later the board deadlocked, and the bench's master-state
+line named it: the 68000 sat in a cycle at 1245A8 (sub RAM, through
+the shared-RAM arbiter) with no acknowledge while the MCU waited for
+the bus. fx68k samples HALT on its phase-1 enable and only then stops
+starting cycles, so my grant, taken on a momentary idle, could land in
+the same clock as a new 68000 cycle: the mux put the MCU's address
+under the CPU's start pulse, the arbiter served the MCU with the
+CPU's request, and the CPU waited forever. The grant now waits two
+CPU clocks after the hold before it trusts an idle bus, and the bench
+flags a start under a grant as a collision.
+
+Two tooling holes closed on the way: mame_capture.py never told its
+Lua script which map a set uses, so every Space Harrier dump had come
+from Hang-On's addresses (the PPI read back as FF/FF, the tell); and
+model_check.py and board_check.py learned the sharrier sprite model,
+the 32-bit ROM assembly and the two-bank mixing rule. With correct
+captures the golden models reproduce MAME's frames 900, 1500 and 2400
+on every pixel, so they are the reference the RTL is held to next.
+
+With the grant fixed the game runs: IRQ 4 every frame from 523 on,
+the MCU idling in its vblank wait between frames, the 68000 feeding
+the sound board. At frame 900 the RTL's layers compose to its own
+frame on every pixel, and MAME's frame 900 is our frame 905 exactly -
+71,680 of 71,680 - the five frames being where the two MCUs' checksums
+end. Space Harrier is pixel-exact through an MCU-driven boot on the
+first comparison; the gate (check_m7.sh) demands that equality within
+a twelve-frame window, no bus collision, and no MCU write to 40385
+once the game is running.
+
+First hardware run (2026-09-03, the build before the jt8051 multicycle
+constraint): the game boots through the MCU, music and effects play,
+so the MCU ROM survives the loader path and the bridge works on
+silicon. Two input faults showed. The stick was pinned to one corner;
+the MCU is the only thing that reads the ADC in this game (its
+per-frame loop at 089A selects each channel through PPI1 port A,
+starts a conversion at 140031, waits about 100 us without checking
+the interrupt, and stores the six results at 040492 for the 68000),
+so that path is where to look, and the bench's scripted stick is the
+test. Separately, the top wired pause, test, service and coin to
+Hang-On's joystick bits; Space Harrier's list has three fire buttons
+first, so Coin paused the core and Pause entered the test menu. The
+top now picks the four bits by the descriptor's sharrier_vid.
+
+The corner was the MCU's fallback mode, and the heartbeat race behind
+it is real on our side. Bench measurements: the 68000 clears 040385 at
+boot, then writes 0x5A there once at frame 10, line 93 (about 170 ms
+after reset) and never again; the MCU's reset routine zeroes the same
+byte twice at frame 17 (283 ms), after its internal ROM checksum and a
+delay loop, and a hand count of the 8751's cycle times gives the same
+280 ms, so jt8051 is not slow. From the MCU's main loop start (frame
+523) its watcher reads zero, decrements its 30-frame counter and at
+about frame 553 sets internal bit 22.0. In that mode the per-frame
+routine replaces the six ADC bytes at 040492 with a fixed table (03 01
+00 07 00 07 at 0492 with the address bit 0 inversion, so 040492 = 01
+and 040493 = 03, the test menu's exact readings) and the 68000 clamps
+01 to full right and 03 to full down. The earlier bench stick test at
+frame 530 was inside the grace window, which is how a clean trace lied.
+The bridge now drops the MCU's writes to 040385, which MAME does too;
+the disassembly shows those two zeros are the only such writes. The
+gate checks that the MCU never enters the fallback and that a stick
+deflected after frame 900 reaches 040492/3 as 0x35 and 0xCB.
+
+Long compares after the fix: sharrier1 matches MAME's frame 900 on
+every pixel at the same +5 offset. Space Harrier at 1500 and 2400
+composes from its own RAMs on every pixel but matches MAME on 79 and
+78 percent, at offsets +6 and +7. Side by side the frames are the same
+scene, the same background and sprites drawn the same way, a few
+frames apart in the demo's animation: the alignment drifts one frame
+per about 450. The MCU makes 71 bus accesses a frame (MCUTOT), each
+holding the 68000 for about 25 clocks, some 42 us a frame that MAME's
+68000 never loses, and the game drops a frame now and then as a
+result. The real board's 8751 stalls its 68000 too, so this is the
+residual the standing rule accepts: explained, not chased. The gate
+compares at 900, before the drift moves the demo.
+
+The game writes to ROM address 000032 every 30 frames or so (ROMWR in
+the bench). MAME drops the write, the bus acknowledges it, nothing
+changes; it stays in the log as the usual reminder.
+
+Optional follow-on (M7b, the user's request after the first playable
+build): the game is still hard on a gamepad. MAME does something we do
+not: its analog ports driven from digital keys move by PORT_KEYDELTA
+(4 on the 0x20-0xE0 range, so 24 frames centre to edge) each frame the
+key is held and return to centre at the same rate when released
+(centerdelta defaults to keydelta), so a keyboard player gets a slewed
+stick rather than our instant jump to full deflection. The held-stick
+OSD option added in M7 walks at 8 counts a frame and never returns;
+the MAME-style slew would be the third behaviour, and probably the
+right default for D-Pad mode. Hang-On's wheel already slews toward the
+stick at 6 counts a frame (the Y Board's Power Drift finding).
+
+Open: how the real board orders the two writers. Both CPUs run the
+same code at the same clocks, so either the board's reset circuit
+releases the 8751 well before the 68000, or something in the 68000's
+first 170 ms is slower on the real bus than ours. Not knowable from
+here without a board.
 
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 

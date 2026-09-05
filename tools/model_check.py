@@ -13,6 +13,7 @@ from romsets import ROMSETS
 from models import tilemap_hangon as tm
 from models import road_hangon as rd
 from models import sprite_hangon as sp
+from models import sprite_sharrier as spsh
 from models import palette5242 as pal
 
 
@@ -27,7 +28,8 @@ ZIPDIR = "/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)"
 def main(dumpdir, setname="hangon"):
     rs = ROMSETS[setname]
     zippath = os.path.join(ZIPDIR, rs["zipfile"] + ".zip")
-    tileram = load_words(os.path.join(dumpdir, "tileram.bin"))
+    sharrier = bool(rs.get("sharrier", 0))
+    tileram = load_words(os.path.join(dumpdir, "tileram.bin"))[:0x2000]
     textram = load_words(os.path.join(dumpdir, "textram.bin"))
     palram = load_words(os.path.join(dumpdir, "paletteram.bin"))
     zf = zipfile.ZipFile(zippath)
@@ -42,21 +44,29 @@ def main(dumpdir, setname="hangon"):
     tx = tm.render_text(textram, planes)
     roadram = load_words(os.path.join(dumpdir, "roadram.bin"))
     roadrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["road"][1][0][0]][0])
-    road, ply = rd.render(roadram, rd.decode(roadrom))
+    road, ply = rd.render(roadram, rd.decode(roadrom), sharrier)
     spriteram = load_words(os.path.join(dumpdir, "spriteram.bin"))
     sprrom = []
     files = rs["regions"]["sprite"][1]
-    for i in range(0, len(files), 2):
-        even = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i][0]][0])
-        odd = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i + 1][0]][0])
-        sprrom.extend((even[j] << 8) | odd[j] for j in range(len(even)))
-    sprrom.extend([0] * (0x8000 * rs["spr_banks"] - len(sprrom)))
     zoomrom = zf.read([m for m in zf.namelist() if m.split("/")[-1] == rs["regions"]["zoom"][1][0][0]][0])
-    spr = sp.draw(spriteram, sprrom, zoomrom, rs["spr_banks"])
-    # MAME video_lamps_w: m_shadow = ~portB & 0x40; truthy picks the
-    # hilight bank (palette base + 2*entries)
-    shade_hilight = not (pb & 0x40)
-    idx, bank = sp.mix_full(road, ply, fg, bg, tx, spr, shade_hilight)
+    if sharrier:
+        for i in range(0, len(files), 4):
+            bs = [zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i + k][0]][0]) for k in range(4)]
+            sprrom.extend(bs[0][j] | (bs[1][j] << 8) | (bs[2][j] << 16) | (bs[3][j] << 24) for j in range(len(bs[0])))
+        sprrom.extend([0] * (0x8000 * rs["spr_banks"] - len(sprrom)))
+        spr = spsh.draw(spriteram, sprrom, zoomrom, rs["spr_banks"])
+        idx, bank = spsh.mix_full(road, ply, fg, bg, tx, spr)
+    else:
+        for i in range(0, len(files), 2):
+            even = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i][0]][0])
+            odd = zf.read([m for m in zf.namelist() if m.split("/")[-1] == files[i + 1][0]][0])
+            sprrom.extend((even[j] << 8) | odd[j] for j in range(len(even)))
+        sprrom.extend([0] * (0x8000 * rs["spr_banks"] - len(sprrom)))
+        spr = sp.draw(spriteram, sprrom, zoomrom, rs["spr_banks"])
+        # MAME video_lamps_w: m_shadow = ~portB & 0x40; truthy picks the
+        # hilight bank (palette base + 2*entries)
+        shade_hilight = not (pb & 0x40)
+        idx, bank = sp.mix_full(road, ply, fg, bg, tx, spr, shade_hilight)
     img = Image.open(os.path.join(dumpdir, "frame.png")).convert("RGB")
     assert img.size == (320, 224), img.size
     total = match = 0

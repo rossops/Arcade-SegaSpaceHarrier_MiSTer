@@ -23,7 +23,8 @@ the open questions; `docs/references.md` says where every file came from.
 | M4 | Hang-On sprites and mixer: full frames vs MAME | done (2026-08-31) |
 | M5 | YM2203 + PCM sound vs MAME recordings | done (2026-08-31) |
 | M6 | Hang-On playable on hardware | done (2026-09-03) |
-| M7 | Space Harrier (sharrier video, i8751) | not started |
+| M7 | Space Harrier (sharrier video, i8751) | done (2026-09-05) |
+| M7b | Space Harrier gamepad feel (optional): MAME-style stick slew | not started |
 | M8 | Enduro Racer (FD1089B, YM2151 board) | not started |
 | M9 | Super Hang-On conversions | not started |
 | M10 | Board reference doc + recovered PAL equations (optional) | not started |
@@ -76,11 +77,31 @@ behind each entry.
   from end-of-frame state. On static frames the two are identical; a
   mid-frame write legitimately splits a frame here, as it would on the
   PCB.
-- Planned for M7: MAME suppresses the Space Harrier i8751's write to
-  40385 as a sync hack. Our disassembly of the MCU ROM showed that write
-  is two zeroes during the MCU's own reset init, and the byte is a
-  heartbeat the 68000 sets and the MCU polls. The bridge will treat it
-  as plain work RAM and get the reset ordering right instead.
+- The Space Harrier i8751 is a real MCS-51 (jotego's jt8051) running the
+  dumped 315-5163A program, and its external data space is bridged onto
+  the main 68000 bus as a second bus master: it holds the 68000 through
+  fx68k's HALT, runs one byte cycle through the same decode the CPU
+  uses, and releases. The one level the MCU drives, IRQ 4 once per
+  vblank, is latched until the 68000's acknowledge, as MAME's HOLD_LINE
+  amounts to.
+- Space Harrier's attract demo drifts against MAME by one frame per
+  450 or so, with the scene otherwise identical: the MCU's 71 bus
+  accesses a frame halt the 68000 for about 42 us that MAME's 68000
+  never loses, and the game drops the odd frame. The real board's
+  8751 stalls its 68000 the same way.
+- MAME suppresses the MCU's write to 040385 as a sync hack, and after
+  the first hardware test we do the same, now knowing why. The
+  disassembly shows the MCU zeroes that byte twice in its reset routine,
+  about 280 ms after reset, and never touches it again; the 68000
+  clears it at boot and writes its heartbeat 0x5A there once, at 170 ms.
+  So the MCU's zeros land second, the heartbeat is gone, and 30 frames
+  after the MCU's main loop starts it gives up and switches to a
+  fallback that stops sampling the stick. On the board that was the
+  stick pinned to one corner with the test menu showing 01 and 03, the
+  fallback's fixed table. The bench had the same race but the attract
+  mode never reads the stick, so nothing showed until hardware. The
+  bridge drops that one write; how the real board orders the two is an
+  open question in the design notes.
 - MAME re-synchronises its scheduler on every access to the main PPI
   (`sync_ppi_w`) to keep the sound handshake ordered. A cycle-concurrent
   design needs no such hack; the handshake is just wires.

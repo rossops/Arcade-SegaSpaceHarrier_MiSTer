@@ -6,7 +6,7 @@
 --test starts the game in service/test mode (DIP). The snapshot is written by
 MAME into the output directory as <setname>/0000.png and moved to frame.png.
 """
-import argparse, glob, os, shutil, subprocess, tempfile
+import argparse, glob, os, shutil, subprocess, sys, tempfile
 
 ROMPATH = "/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,6 +34,11 @@ def main():
     if a.coin is not None: env["SH_COIN"] = str(a.coin)
     if a.start is not None: env["SH_START"] = str(a.start)
     env["SH_TEST_FRAME"] = str(a.test_frame)
+    # the sharrier map (Space Harrier, Enduro): the RAMs and the PPI live elsewhere
+    sys.path.insert(0, HERE)
+    from romsets import ROMSETS
+    if ROMSETS.get(a.set, {}).get("sharrier", 0):
+        env["SH_MAP"] = "sharrier"
     if a.test:
         # MAME's generic "Service Mode" toggle is the F2 key; simplest is a
         # cfg file that maps the test switch... use the built-in dip override:
