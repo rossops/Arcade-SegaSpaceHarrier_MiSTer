@@ -17,9 +17,14 @@ def expand_mra(text, zf):
     out = bytearray()
     lines = text.splitlines()
     i = 0
-    def rom(name):
+    def rom(name, crc=None, length=None):
+        # by name, else by CRC: a merged zip stores a file shared between sets
+        # once (the split clone zips carry it under each set's name)
         c = [n for n in zf.namelist() if n.split("/")[-1] == name]
-        return zf.read(c[0])
+        if not c and crc:
+            c = [i.filename for i in zf.infolist() if f"{i.CRC & 0xffffffff:08x}" == crc]
+        data = zf.read(c[0])
+        return data[:int(length, 16)] if length else data
     while i < len(lines):
         s = lines[i].strip()
         m = re.match(r'<part repeat="(\d+)">([0-9A-Fa-f]{2})</part>', s)
@@ -28,14 +33,15 @@ def expand_mra(text, zf):
         elif s.startswith("<part>") and s.endswith("</part>"):
             out += bytes.fromhex(s[6:-7].replace(" ", ""))
         elif s.startswith('<part name="') and s.endswith('/>') and "map=" not in s:
-            out += rom(re.search(r'name="([^"]+)"', s).group(1))
+            ln = re.search(r'length="([^"]+)"', s)
+            out += rom(re.search(r'name="([^"]+)"', s).group(1), re.search(r'crc="([^"]+)"', s).group(1), ln and ln.group(1))
         elif s.startswith('<interleave output="'):
             width = int(re.search(r'output="(\d+)"', s).group(1)) // 8
             parts = []
             i += 1
             while "</interleave>" not in lines[i]:
-                m = re.search(r'name="([^"]+)".* map="([01]+)"', lines[i])
-                parts.append((rom(m.group(1)), m.group(2)))
+                m = re.search(r'name="([^"]+)" crc="([^"]+)"(?: length="([^"]+)")? map="([01]+)"', lines[i])
+                parts.append((rom(m.group(1), m.group(2), m.group(3)), m.group(4)))
                 i += 1
             n = len(parts[0][0])
             for j in range(n):
@@ -82,8 +88,10 @@ def test_region_crcs(key):
         for region, (loader, files) in rs["regions"].items():
             for f in files:
                 n, s, c, _ = pack_roms.file_fields(f)
+                if n == "-":
+                    continue
                 try:
-                    pack_roms.read_rom(zf, n, s, c)   # raises on mismatch
+                    pack_roms.read_rom(zf, n, s, c, pack_roms.file_size(f))   # raises on mismatch
                 except SystemExit as e:
                     if "missing ROM" in str(e):
                         pytest.skip(f"{e} in the local {rs['zipfile']}.zip")

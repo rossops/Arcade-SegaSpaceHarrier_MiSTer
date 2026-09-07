@@ -241,7 +241,7 @@ when bit 11 is clear and the pen is 0xA (add one bank); otherwise
 
 | Board | Games | Chips | PCM clock |
 | --- | --- | --- | --- |
-| YM2203 | `hangon`, `sharrier`, `enduror1` (+`enduror1d`, `endurobl`) | Z80 4 MHz, YM2203 4 MHz, 315-5218 | 8 MHz |
+| YM2203 | `hangon`, `sharrier`, `enduror1` (+`enduror1d`, `endurobl`) | Z80 4 MHz, YM2203 4 MHz, discrete PCM board (8 voices, slots 8-15, no banking; MAME 0.289) | 4 MHz, /64 = 62.5 kHz |
 | YM2151 | `enduror`/`endurora`/`endurorb` (+`endurord`), `shangonro`/`shangonho`/`shangonrb`/`shangonrb2` | Z80 4 MHz, YM2151 4 MHz, 315-5218 | 4 MHz |
 | 2x YM2203 | `endurob2` bootleg | Z80 4 MHz, two YM2203 4 MHz, 315-5218 | 4 MHz |
 
@@ -1024,7 +1024,178 @@ releases the 8751 well before the 68000, or something in the 68000's
 first 170 ms is slower on the real bus than ours. Not knowable from
 here without a board.
 
+### M8 working notes (Enduro Racer, from 2026-09-05)
+
+Order of work: the FD1089B first, because `enduror1` runs on the YM2203
+board the core already has and so exercises the decrypt with nothing
+else new; then the YM2151 board for `enduror`; then controls, DIPs,
+the clones and the bootlegs' opcode slot; hardware last.
+
+FD1089B: `verif/models/fd1089.py` is a port of MAME's fd1089.cpp
+(both variants; only B is used). Against MAME's decrypted sets it is
+exact over the whole 192 KB main ROM of `enduror` and the first 64 KB
+of `enduror1`: every word equals the opcode view or the data view,
+except two adjacent words at 0xFF0 in both decrypted sets, the
+bootleggers' own patch. The key's zero data entries map to exactly the
+unencrypted ranges MAME lists (030000-04FFFF and 100000-1FFFFF).
+`rtl/cpu/sh_fd1089b.sv` is the combinational block (20,000 random
+words and the real key over 64 KB in both fetch types, cocotb). In the
+core the key image lives in a 4096-word BRAM filled from the stream's
+key slot and read every clock from the cycle's address and fetch type,
+so the byte is ready before the cache answers; the decrypt sits on the
+cache's output behind the descriptor's fd1089b flag. Opcode means a
+program-space fetch (FC 2 or 6), which is what MAME's AS_OPCODES
+covers. The bootlegs' decrypted-opcode image is a second 256 KB behind
+the cache's address bit 19, selected by ops_split and the fetch type,
+landing at the mainops SDRAM slot.
+
+Packer: Enduro Racer's YM2151 board loads its second PCM ROM at
+0x10000, so flat regions accept a ("-", size, None) zero gap, emitted
+as a repeat part in the MRA. MAME's merged zip stores a file shared
+between sets once under one name (enduror1's epr-7762.ic5 is
+epr-7681.ic8), so the packer, the clone-zip tool and the test's MRA
+expander all fall back to the CRC. Clones now carry an "alt" folder;
+sharrier1's MRA had shipped at the root in M7 and moves to
+_alternatives/_Space Harrier here.
+
+First results: `enduror1` boots through the decrypt on the first try
+and its frame 600 equals MAME's on every pixel (our frame 592, so the
+RTL runs eight frames ahead here, the opposite sign from Space
+Harrier's MCU-paced boot). Its Z80 exchanged 3,528 latch bytes in
+those 600 frames. The attract mode is silent for its first 13 seconds
+in MAME and plays until about 36, so the sound gate records 30 s and
+compares from 13 s on, which needs 1,810-frame runs. A lesson from the
+first audio compare: the bench's DIP default was Hang-On's byte, which
+on Enduro Racer turns demo sounds off, so every set's GAMEARGS now
+carries MAME's default (Space Harrier's demo sounds had been off in the
+M7 bench too, unnoticed because that gate has no audio check).
+
+`enduror` (the YM2151 board) boots on the merged sound module at the
+first attempt: frame 600 pixel-exact at the same -8 offset, 4,704
+latch bytes in 600 frames, no watchdog or Z80 crash. Both boards
+share one Z80, one PCM and one ROM BRAM; jt03 and jt51 are both in
+the fabric and the descriptor's sound_board picks the map, the tick
+rate and the mix.
+
+Cross-check from the other side: MAME's decrypted sets `endurord` and
+`enduror1d` run through the core as plain 68000 sets (no key) and
+reproduce the encrypted sets' frame 600 pixel for pixel at the same
+offset, with the same latch byte counts. So the core's decrypt does
+to the encrypted ROMs what MAME's table did to make those sets. (The
+first attempt showed a black screen: the set had never been packed
+and the bench ran with no ROM. The gate packs every set it runs.)
+
+The YM2203 board's attract audio compared at 0.87 against MAME while
+its channel programming matched MAME's register for register and the
+engine matched the Python model tick for tick on that very state. The
+model was the problem: it was ported from segapcm.cpp as of MAME
+0.284 (the source checkout), while the recordings come from the 0.289
+binary, and 0.289 rewrote the device (commit 926cb394, "Split discrete
+logic variant and 315-5218 variant"). Two things changed. A voice wraps
+or stops when its page equals the end register (the old code used end
+plus one), and the YM2203 board's PCM is now the discrete-logic board:
+eight voices in channel slots 8-15, the lower slots plain RAM, no bank
+bits; the 315-5218 with BANK_512 banking is the YM2151 board's. Enduro
+Racer's driver parks its engine voices with end equal to the loop
+page, which the old rule played as a 256-byte loop, the broadband
+noise in the RTL's spectrogram. Both rules are now in the model and
+the engine follows 0.289, with the board selected by the descriptor.
+Lesson for the notes: the source checkout must be the reference
+version, and the ROM checksums are not the only thing to pin.
+
+With the engine on 0.289's rules the YM2203 set's attract audio
+matches MAME at 0.996 envelope correlation (loudness 914 against 931)
+and Hang-On's M5 gate re-passed at 0.974. The YM2151 set scored 0.883
+on the raw signal and 0.991 above 20 Hz: its later passages are near
+silence, and what the raw envelope saw was the parked voices' held
+bytes, DC steps that the driver moves at cue times a few frames apart
+in the two (the core's 68000 runs ahead). The compare tool now
+high-passes both signals at 20 Hz before the envelope metric, which
+no amplifier would pass anyway; the YM2203 set still scores 0.984 on
+that measure. Both boards' spectra above 20 Hz match band for band.
+
+The M8 gate passes end to end (2026-09-06): lint, the tool and unit
+tests, both boards pixel-exact at frame 600, attract audio 0.984 and
+0.991 against MAME above 20 Hz with loudness within a percent, and
+MAME's decrypted sets reproducing the encrypted sets' frames. Left
+for the milestone: the hardware test, and controls and DIPs on the
+box.
+
+First Enduro Racer hardware build (2026-09-06): a boot loop, black
+alternating with a screen of one repeated tile. The FD1089B key BRAM
+was written with the raw stream offset instead of the offset within
+the key slot, so the key arrived rotated by 0x1040 bytes and the 68000
+decrypted garbage from its first fetch; the watchdog then reset it
+forever. The bench never saw it because it loaded key.hex straight
+into the BRAM with $readmemh. The MCU ROM path, written a week
+earlier, subtracts its slot base; the key path copied the wrong half
+of it. Fixed, and the bench now streams the key through the core's
+loader port for every keyed set (+keystream, the Makefile picks it
+whenever the set has a key image), so the routing is on the gate.
+Rule for the notes: a BRAM region the loader fills must be loaded
+through the loader in at least one bench run, never only by shortcut.
+
+Space Harrier on the M8 hardware build had no coin jingle and no
+"welcome to the fantasy zone" speech. MAME's Z80 gets the coin command
+0xE7 one frame and the keep-alive 0x80 the next; ours got both in the
+same frame, and every keep-alive twice a frame: the MCU's vblank
+interrupt was being taken twice. MAME arms the line with HOLD_LINE on
+the MCU's P1 write and drops it at the acknowledge; our latch re-armed
+from the pin, which the MCU holds low through a settle-delay call
+longer than the game's vblank handler, so the handler ran again after
+its RTE. The latch now arms on the pin's assertion only. It was there
+in the M7 release too: the game ran, the demo matched MAME's frames,
+and only the sound commands that must stand alone for a frame showed
+it. The gate now looks for the coin jingle and the speech.
+
+And then the board overruled MAME 0.289: with its loop rule Enduro
+Racer plays without engine sound on the DE10, because the voices the
+driver programs with loop page == end page are the engine loops, not
+parked channels. The rule MAME used through 0.288 (end + 1) is back
+in the model and the engine, the 315-5218 model serves both boards
+again, and the discrete-board variant stays in the code as an unused
+option. The cost would have been an audio gate against a
+0.289 recording that lacks the engine (0.74 above 20 Hz), so the gate
+now records its Enduro reference with a reference MAME build:
+tools/mame_ref_build.sh makes a driver-only MAME 0.289 with the
+pre-0.289 loop-end rule restored in segapcm.cpp (a 20-minute build at
+~/Code/mame-ref, binary `hangon`), and the gate uses it through MAME_REF, falling back
+to stock 0.289 at a 0.7 threshold with the reason printed. Lesson: a newer MAME is not
+evidence, only a different guess; hardware is evidence.
+
+Against the reference build the YM2203 set scores 0.962 above 20 Hz
+with loudness within two percent. The YM2151 set scores 0.876: its
+first six seconds of music score 0.98 and 0.95, then the envelopes
+part. At frame 1400 the two engines have the same three voices with
+the same loops, deltas and banks, and the engine reproduces the
+reference's frame-1000 state tick for tick through bank 1 and the
+image's gap; what differs is the volumes, 0x17 against 0x1f and 0x19,
+which the driver sets from the demo bike's speed. So by then the two
+demos are at different points of the race, the drift Space Harrier's
+demo showed, and the gate takes 0.85 for that set with this written
+beside it. The video at frame 1400 settled it: MAME's frame 1400 equals
+our frame 1401 on every pixel, so the race is the same and the volume
+difference is one frame of update timing. What has moved is the
+alignment itself, from our frame 592 at MAME's 600 to our 1401 at
+MAME's 1400: this game's 68000 overruns frames under load (the M11
+note measured that in MAME), and ours, behind an SDRAM cache, overruns
+a few more, so the two demos slide past each other by about a frame
+every 90. A fixed-lag envelope over 17 s cannot follow that, and a
+per-segment lag does not fully recover it either, because the engine's
+modulation is the sum of voices whose volume updates land on different
+frames in the two; the spectra of the late window still match band for
+band. The gate threshold for that set is 0.85 with this beside it.
+
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
+
+- Enduro Racer's YM2151 set plays its engine about a quarter quieter
+  than the reference build in the late attract (22-28 s: every band
+  at 0.77 of the reference, the YM2203 set within 5 percent). At
+  frame 1400 the engine voices carry volumes 0x17 where the reference
+  has 0x1f and 0x19; the driver sets them from the bike's speed, and
+  the race is pixel-identical at that frame. Whether the driver's
+  volume ramp depends on timing the two boards deliver differently is
+  unresolved; the hardware sounds right to the user.
 
 1. IRQ2 every 16 scanlines is in the schematics but disabled in MAME and
    no game visibly needs it. Leave it out; if a game polls for an

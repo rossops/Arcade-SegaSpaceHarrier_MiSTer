@@ -40,18 +40,18 @@ async def z80_write(dut, addr, data):
     await RisingEdge(dut.clk)
 
 
-@cocotb.test()
-async def random_channels(dut):
+async def random_run(dut, discrete, seed):
     cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
     for s in ("tick", "cs", "we", "addr", "din", "rom_ack", "rom_dout"): getattr(dut, s).value = 0
     dut.bankmask.value = 0x70
+    dut.discrete.value = int(discrete)
     dut.reset.value = 1
     for _ in range(3): await RisingEdge(dut.clk)
     dut.reset.value = 0
     await RisingEdge(dut.clk)
     cocotb.start_soon(serve_rom(dut))
-    m = SegaPCM(ROM)
-    rng = random.Random(1)
+    m = SegaPCM(ROM, discrete=discrete)
+    rng = random.Random(seed)
     for t in range(600):
         # reprogram a few channels between ticks (only when the engine idles)
         for _ in range(rng.randrange(3)):
@@ -88,6 +88,18 @@ async def random_channels(dut):
                 assert v == m.read(8 * ch + off), f"tick {t}: ch{ch} reg {off:02x} = {v:02x} model {m.read(8*ch+off):02x}"
                 await RisingEdge(dut.clk)
         dut.cs.value = 0
+
+
+@cocotb.test()
+async def random_channels_315_5218(dut):
+    """the YM2151 board's chip: 16 voices, BANK_512 banking"""
+    await random_run(dut, False, 1)
+
+
+@cocotb.test()
+async def random_channels_discrete(dut):
+    """the YM2203 board's discrete PCM: voices in slots 8-15 only, no banking"""
+    await random_run(dut, True, 2)
 
 
 E_LOAD, E_CHECK, E_FETCH, E_WAIT, E_ACC = 1, 2, 3, 4, 5
@@ -131,6 +143,7 @@ async def write_during_engine(dut):
     cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
     for s in ("tick", "cs", "we", "addr", "din", "rom_ack", "rom_dout"): getattr(dut, s).value = 0
     dut.bankmask.value = 0x70
+    dut.discrete.value = 0
     dut.reset.value = 1
     for _ in range(3): await RisingEdge(dut.clk)
     dut.reset.value = 0

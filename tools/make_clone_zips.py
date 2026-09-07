@@ -22,17 +22,29 @@ def build(key, zipdir, out):
     if parent == key:
         return None
     src = zipfile.ZipFile(os.path.join(zipdir, parent + ".zip"))
-    needed = {f[0] for _, files in rs["regions"].values() for f in files}
+    files = [f for _, files in rs["regions"].values() for f in files if f[0] != "-"]   # "-" is a zero gap
+    needed = {f[0] for f in files}
+    crc_of = {f[0]: f[2] for f in files}
     folder = rs.get("zip_folder", key)
     dst_path = os.path.join(out, key + ".zip")
     count = 0
+    written = set()
     with zipfile.ZipFile(dst_path, "w", zipfile.ZIP_DEFLATED) as dst:
         for entry in src.namelist():
             entry_folder, _, base = entry.rpartition("/")
             if entry_folder == folder and base in needed:
                 dst.writestr(base, src.read(entry))
+                written.add(base)
                 count += 1
-    missing = needed - {e.rpartition("/")[2] for e in src.namelist()}
+        # a file the clone shares with another set is stored once in the merged
+        # zip, under that set's name: find it by CRC and write it under ours
+        by_crc = {f"{i.CRC & 0xffffffff:08x}": i.filename for i in src.infolist()}
+        for base in sorted(needed - written):
+            if crc_of[base] in by_crc:
+                dst.writestr(base, src.read(by_crc[crc_of[base]]))
+                written.add(base)
+                count += 1
+    missing = needed - written
     if missing:
         # a clone this collection lacks: say so and leave no half zip behind
         os.remove(dst_path)

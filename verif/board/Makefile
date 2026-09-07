@@ -2,10 +2,10 @@
 ROOT := $(abspath ../..)
 SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
   rtl/io/sh_ana_shape.sv rtl/io/sh_adc0804.sv rtl/io/sh_i8255.sv rtl/cpu/sh_rom_cache.sv rtl/cpu/sh_m68k_bus.sv \
-  rtl/cpu/sh_mcu.sv rtl/cpu/jt8051/jt8051.v rtl/cpu/jt8051/jt8051_alu.v rtl/cpu/jt8051/jt8051_ctrl.v \
+  rtl/cpu/sh_mcu.sv rtl/cpu/sh_fd1089b.sv rtl/cpu/jt8051/jt8051.v rtl/cpu/jt8051/jt8051_alu.v rtl/cpu/jt8051/jt8051_ctrl.v \
   rtl/cpu/jt8051/jt8051_periph.v rtl/cpu/jt8051/jt8051_regs.v rtl/cpu/jt8051/jt8051_serial.v \
   rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
-  rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys_2203.sv rtl/video/sh_palette_5242.sv \
+  rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys.sv rtl/video/sh_palette_5242.sv \
   rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv rtl/video/sh_roadrom.sv rtl/video/sh_road.sv rtl/video/sh_zoomrom.sv rtl/video/sh_sprite.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv
 VFLAGS := -Wno-fatal -Wno-lint -Wno-style -Werror-PINMISSING -Wno-BLKANDNBLK -Wno-MULTIDRIVEN -Wno-UNOPTFLAT \
@@ -27,8 +27,15 @@ COIN ?= -1
 PLUSARGS ?=
 GAME ?= hangon
 # descriptor plusargs per set (tools/romsets.py); hangon-family sets need none
-GAMEARGS_sharrier  := +game_id=1 +sharrier=1 +cpu10m=1 +mcu=1 +spr_banks=8 +adc_reverse=03 +ana_mode=1
+GAMEARGS_sharrier  := +game_id=1 +sharrier=1 +cpu10m=1 +mcu=1 +spr_banks=8 +adc_reverse=03 +ana_mode=1 +dswb=FC
 GAMEARGS_sharrier1 := $(GAMEARGS_sharrier)
+GAMEARGS_enduror   := +game_id=2 +sharrier=1 +cpu10m=1 +fd1089b=1 +sound_board=1 +spr_banks=8 +adc_reverse=08 +ana_mode=2 +dswb=7E
+GAMEARGS_endurora  := $(GAMEARGS_enduror)
+GAMEARGS_endurorb  := $(GAMEARGS_enduror)
+GAMEARGS_endurord  := +game_id=2 +sharrier=1 +cpu10m=1 +sound_board=1 +spr_banks=8 +adc_reverse=08 +ana_mode=2 +dswb=7E
+GAMEARGS_enduror1  := +game_id=2 +sharrier=1 +cpu10m=1 +fd1089b=1 +sound_board=0 +spr_banks=8 +adc_reverse=08 +ana_mode=2 +dswb=7E
+GAMEARGS_enduror1d := +game_id=2 +sharrier=1 +cpu10m=1 +sound_board=0 +spr_banks=8 +adc_reverse=08 +ana_mode=2 +dswb=7E
+GAMEARGS_endurobl  := +game_id=2 +sharrier=1 +cpu10m=1 +ops_split=1 +sound_board=0 +spr_banks=8 +adc_reverse=08 +ana_mode=2 +dswb=7E
 GAMEARGS := $(GAMEARGS_$(GAME))
 
 EXTRA := $(wildcard $(ROOT)/rtl/audio/jt51/*.v) $(wildcard $(ROOT)/rtl/audio/jt03/*.v) $(Z80SRC)
@@ -49,8 +56,10 @@ run: obj_dir/Vtb_board
 	rm -f out/z80rom.hex && head -16384 $(ROOT)/verif/golden/$(GAME)/z80.hex > out/z80rom.hex; \
 	rm -f out/mcurom.hex; [ -f $(ROOT)/verif/golden/$(GAME)/mcu.hex ] && head -2048 $(ROOT)/verif/golden/$(GAME)/mcu.hex > out/mcurom.hex || true; \
 	ln -sf $(ROOT)/rtl/cpu/jt8051/jt8051.uc out/jt8051.uc; \
+	rm -f out/key.hex; [ -f $(ROOT)/verif/golden/$(GAME)/key.hex ] && head -4096 $(ROOT)/verif/golden/$(GAME)/key.hex > out/key.hex || true; \
+	KEYARG=; [ -f out/key.hex ] && KEYARG=+keystream; \
 	sh $(ROOT)/tools/keepalive.sh $(ROOT) & KA=$$!; \
-	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) +tilerom +roadrom +zoomrom +z80rom +mcurom $(GAMEARGS) $(PLUSARGS)); RC=$$?; \
+	(cd out && ../obj_dir/Vtb_board +frames=$(FRAMES) +dumpframe=$(DUMPFRAME) +coin=$(COIN) +hexdir=verif/golden/$(GAME) +tilerom +roadrom +zoomrom +z80rom +mcurom $$KEYARG $(GAMEARGS) $(PLUSARGS)); RC=$$?; \
 	kill $$KA 2>/dev/null; wait $$KA 2>/dev/null; exit $$RC
 
 clean:

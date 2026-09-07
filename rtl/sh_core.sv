@@ -102,22 +102,29 @@ wire enphi2 = cpu10m ? en2_f : en2_8;
 // sound enables from an 8 MHz accumulator (10413/65536 * 50.3496 MHz =
 // 7.99991 MHz): ce_8m for the tv80 sim clock and the PCM tick divider,
 // every other pulse is the 4 MHz Z80 / YM2203 enable
+// (ce_2m is jt51's half-rate enable; the PCM tick is its clock / 128,
+// 8 MHz on the YM2203 board and 4 MHz on the YM2151 board)
 reg [15:0] acc8;
-reg        ce_8m, ce_4m, ph4;
-reg  [6:0] pcm_div;
+reg        ce_8m, ce_4m, ce_2m, ph4, ph2;
+reg  [7:0] pcm_div;
 reg        pcm_tick;
 wire [16:0] acc8_sum = {1'b0, acc8} + 17'd10413;
+wire [7:0]  pcm_last = (board_desc.sound_board == 2'd0) ? 8'd127 : 8'd255;
 always @(posedge clk_sys) begin
-    ce_8m <= 1'b0; ce_4m <= 1'b0; pcm_tick <= 1'b0;
-    if (reset) begin acc8 <= 16'd0; ph4 <= 1'b0; pcm_div <= 7'd0; end
+    ce_8m <= 1'b0; ce_4m <= 1'b0; ce_2m <= 1'b0; pcm_tick <= 1'b0;
+    if (reset) begin acc8 <= 16'd0; ph4 <= 1'b0; ph2 <= 1'b0; pcm_div <= 8'd0; end
     else begin
         acc8 <= acc8_sum[15:0];
         if (acc8_sum[16] && !pause) begin
             ce_8m <= 1'b1;
             ph4 <= ~ph4;
-            if (ph4) ce_4m <= 1'b1;
-            if (pcm_div == 7'd127) begin pcm_div <= 7'd0; pcm_tick <= 1'b1; end
-            else pcm_div <= pcm_div + 7'd1;
+            if (ph4) begin
+                ce_4m <= 1'b1;
+                ph2 <= ~ph2;
+                if (ph2) ce_2m <= 1'b1;
+            end
+            if (pcm_div >= pcm_last) begin pcm_div <= 8'd0; pcm_tick <= 1'b1; end
+            else pcm_div <= pcm_div + 8'd1;
         end
     end
 end
@@ -156,15 +163,25 @@ assign hs = hsync;   assign vs = vsync;
 reg  m_irq4, vbl_d;
 wire m_iack;
 wire [2:0] mcu_ipl;              // the i8751's P1 bits 2:0, inverted (a pulse per frame)
-reg  [2:0] mcu_ipl_l;            // held until the 68000 acknowledges that level (MAME HOLD_LINE)
+reg  [2:0] mcu_ipl_l, mcu_ipl_d; // held until the 68000 acknowledges that level (MAME HOLD_LINE)
+// MAME: every P1 write with a level is set_input_line(level, HOLD_LINE): the
+// line stands until the 68000 takes it and is then dropped, whatever the
+// MCU's pin does. The MCU holds its pin low for tens of microseconds (a
+// settle-delay call), longer than the game's vblank handler, and this
+// latch used to re-arm from the still-low pin after the acknowledge: two
+// interrupts a frame, the handler's sound byte sent twice, and the coin
+// jingle and the "welcome to the fantasy zone" speech cut off by the
+// keep-alive byte that followed their commands in the same frame (found
+// on hardware in M8). So the latch arms on the pin's assertion only.
 always @(posedge clk_sys) begin
     vbl_d <= vbl_irq;
+    mcu_ipl_d <= mcu_ipl;
     if (cpu_reset) begin m_irq4 <= 1'b0; mcu_ipl_l <= 3'd0; end
     else begin
         if (vbl_irq && !vbl_d && !board_desc.has_mcu) m_irq4 <= 1'b1;
         if (m_iack && c_addr[3:1] == 3'd4) m_irq4 <= 1'b0;
-        if (mcu_ipl != 3'd0) mcu_ipl_l <= mcu_ipl;
-        else if (m_iack && c_addr[3:1] == mcu_ipl_l) mcu_ipl_l <= 3'd0;
+        if (m_iack && c_addr[3:1] == mcu_ipl_l) mcu_ipl_l <= 3'd0;
+        if (mcu_ipl != 3'd0 && mcu_ipl_d == 3'd0) mcu_ipl_l <= mcu_ipl;
     end
 end
 wire [2:0] ipl_m = board_desc.has_mcu ? mcu_ipl_l : (m_irq4 ? 3'd4 : 3'd0);
@@ -291,17 +308,49 @@ reg m_ram_rdy;
 always @(posedge clk_sys) m_ram_rdy <= m_valid && !m_start && !m_ack ? 1'b1 : (m_valid ? m_ram_rdy : 1'b0);
 wire m_cs = m_start;
 
-// ---- main ROM cache (256 KB)
+// ---- main ROM cache (256 KB, plus the bootleg sets' decrypted-opcode
+// image as a second 256 KB behind address bit 19: MAME's AS_OPCODES for
+// endurobl/endurob2, whose program-space fetches read the mainops slot)
+wire        m_opcode = m_fc[1] && !m_fc[0];   // FC 2 / 6: program space
+wire        m_ops    = board_desc.ops_split && m_opcode && !mcu_grant;
 wire [15:0] m_rom_data; wire m_rom_ack;
-wire        m_rom_req; wire [18:3] m_rom_addr;
-sh_rom_cache #(.AW(18), .LINES(512)) main_cache (
+wire        m_rom_req; wire [19:3] m_rom_addr;
+sh_rom_cache #(.AW(19), .LINES(512)) main_cache (
     .clk(clk_sys), .reset(reset), .invalidate(reset),
-    .cpu_req(m_valid && m_rd && m_sel_rom), .cpu_addr(ma[18:1]),
+    .cpu_req(m_valid && m_rd && m_sel_rom), .cpu_addr({m_ops, ma[18:1]}),
     .cpu_data(m_rom_data), .cpu_ack(m_rom_ack),
     .rom_req(m_rom_req), .rom_addr(m_rom_addr), .rom_data(p0_dout), .rom_ack(p0_ack)
 );
 assign p0_req  = m_rom_req;
-assign p0_addr = SDR_MAIN_BASE[24:3] + {6'd0, m_rom_addr};
+assign p0_addr = (m_rom_addr[19] ? SDR_MAINOPS_BASE[24:3] : SDR_MAIN_BASE[24:3]) + {6'd0, m_rom_addr[18:3]};
+
+// ---- FD1089B (enduror sets): the key image from the stream's key slot,
+// 8 KB as 4096 words, read every clock at the cycle's address and fetch
+// type (both hold for the whole cycle and the cache needs two clocks to
+// answer, so the byte is there with the word); the decrypt is
+// combinational on the cache's output. Selected by the descriptor; the
+// bench loads the key with +keyrom (key.hex, the packer's word image).
+reg  [15:0] key_ram [0:4095];
+`ifdef SIMULATION
+initial if ($test$plusargs("keyrom")) $readmemh("key.hex", key_ram);
+`endif
+wire        key_brm = brm_wr && brm_addr >= OFF_KEY && brm_addr < OFF_KEY + 27'h2000;
+wire [12:0] key_wa  = 13'(brm_addr - OFF_KEY);                             // slot-relative, as the MCU ROM's (the first
+                                                                           // hardware build stored the key rotated by
+                                                                           // the slot's stream offset: a boot loop)
+wire [12:0] key_idx = {~m_opcode, ma[23:16], ma[9], ma[5], ma[3], ma[1]};   // fd1089.cpp decrypt_one
+reg  [15:0] key_w;
+reg         key_lo, key_op;
+always @(posedge clk_sys) begin
+    if (key_brm) key_ram[key_wa[12:1]] <= brm_din;
+    key_w  <= key_ram[key_idx[12:1]];
+    key_lo <= key_idx[0];
+    key_op <= m_opcode;
+end
+wire  [7:0] key_byte = key_lo ? key_w[15:8] : key_w[7:0];
+wire [15:0] m_rom_dec;
+sh_fd1089b fd1089b (.din(m_rom_data), .key(key_byte), .opcode(key_op), .dout(m_rom_dec));
+wire [15:0] m_rom_q = board_desc.fd1089b ? m_rom_dec : m_rom_data;
 
 // ---- the main CPU's read window onto the sub ROM (C00000-C3FFFF)
 wire [15:0] m_sub_data; wire m_sub_ack;
@@ -378,9 +427,9 @@ always @(posedge clk_sys) begin
         if (z80_fetch_ram && z80_run) dbg_z80_crash <= 1'b1;
     end
 end
-sh_soundsys_2203 soundsys (
-    .clk(clk_sys), .reset(reset), .z80_reset_n(z80_run),
-    .ce_z80(ce_4m), .ce_z80x2(ce_8m), .ce_fm(ce_4m), .pcm_tick(pcm_tick),
+sh_soundsys soundsys (
+    .clk(clk_sys), .reset(reset), .board(board_desc.sound_board), .z80_reset_n(z80_run),
+    .ce_z80(ce_4m), .ce_z80x2(ce_8m), .ce_fm(ce_4m), .ce_fm_p1(ce_2m), .pcm_tick(pcm_tick),
     .mute_n(pc0_out[0]), .pcm_bankmask(8'h70),
     .snd_latch(pa0_out), .snd_nmi(~snd_obf_n), .snd_read(snd_read),
     // the stream's Z80 slot is 64 KB (ROM + zero pad) but the BRAM is the
@@ -425,10 +474,19 @@ wire [7:0] in_service = ~{p1_buttons[11], p1_buttons[12], 1'b0, p1_buttons[6],
 wire [7:0] in_service_sh = ~{p1_buttons[6], p1_buttons[5], p1_buttons[4], p1_buttons[7],
                              service | p1_buttons[11], test | p1_buttons[10],
                              coin2, coin1 | p1_buttons[8]};
+// enduror (MAME `enduror` port): start is bit 6, bits 7, 5 and 4 unused;
+// its list is J1: 4 Gas, 5 Brake, 6 Start, 7 Wheelie, 8 Coin, 9 Pause,
+// 10 Test, 11 Service (the pedals and coin group as on Hang-On and
+// Space Harrier, so the core's gas/brake and the top's coin/pause/test/
+// service bits need no per-game case)
+wire [7:0] in_service_en = ~{1'b0, p1_buttons[6], 1'b0, 1'b0,
+                             service | p1_buttons[11], test | p1_buttons[10],
+                             coin2, coin1 | p1_buttons[8]};
+wire       enduro = board_desc.game_id == 8'd2;
 reg [7:0] inputs_q;
 always @* begin
     case (ma[2:1])
-        2'd0: inputs_q = shm ? in_service_sh : in_service;
+        2'd0: inputs_q = enduro ? in_service_en : shm ? in_service_sh : in_service;
         2'd1: inputs_q = shm ? 8'hFF : dsw_a;   // hangon: COINAGE = SW A; sharrier: unused
         2'd2: inputs_q = shm ? dsw_a : dsw_b;   // hangon: DSW = SW B; sharrier: COINAGE
         2'd3: inputs_q = shm ? dsw_b : 8'hFF;   // sharrier: DSW
@@ -516,7 +574,15 @@ wire [7:0] gas   = p1_buttons[4] ? 8'hFF : (throttle_s > 8'h80) ? {throttle_s[6:
 wire [7:0] brake = p1_buttons[5] ? 8'hFF : (throttle_s < 8'h80) ? {7'h7F - throttle_s[6:0], 1'b0} : 8'h00;
 wire [7:0] adc_ch0 = (am == 3'd0) ? tq(wheel) : (am == 3'd1) ? tq(in_x) : gas;
 wire [7:0] adc_ch1 = (am == 3'd0) ? gas       : (am == 3'd1) ? tq(in_y) : brake;
-wire [7:0] adc_ch2 = (am == 3'd0) ? brake     : (am == 3'd2) ? {~in_y[7], in_y[6:0]} : 8'h80;
+// enduror's bank channel (MAME ADC2: 0x00-0xFF, rest 0x20, no reverse):
+// MAME scales a stick's two halves separately, so pulling back runs
+// 0x20 up to 0xFF and pushing forward 0x20 down to 0x00; the Wheelie
+// button (J1 bit 7) is a full pull
+wire signed [7:0] bank_in  = p1_buttons[7] ? 8'sd127 : in_y;
+wire        [7:0] bank_mag = bank_in[7] ? (8'd128 - {1'b0, bank_in[6:0]}) : {1'b0, bank_in[6:0]};   // |deflection|, 0..128
+wire       [15:0] bank_up  = {8'd0, bank_mag} * 16'd223;                                            // 0..127 -> 0..0xDD
+wire        [7:0] adc_bank = bank_in[7] ? (8'h20 - {2'd0, bank_mag[7:2]}) : (8'h20 + bank_up[14:7]);
+wire [7:0] adc_ch2 = (am == 3'd0) ? brake     : (am == 3'd2) ? adc_bank : 8'h80;
 wire [7:0] adc_ch3 = (am == 3'd2) ? {~wheel[7], wheel[6:0]} : 8'h80;
 
 // ================================================================ SUB CPU
@@ -626,7 +692,7 @@ end
 always @* begin
     m_din = 16'hFFFF;
     m_ack = 1'b0;
-    if (m_sel_rom)         begin m_din = m_rom_data; m_ack = m_wr ? m_ram_rdy : m_rom_ack; end
+    if (m_sel_rom)         begin m_din = m_rom_q;    m_ack = m_wr ? m_ram_rdy : m_rom_ack; end
     else if (m_sel_subrom) begin m_din = m_sub_data; m_ack = m_wr ? m_ram_rdy : m_sub_ack; end
     else if (m_sel_shared) begin m_din = m_shr_q;    m_ack = m_shr_ack; end
     else if (m_sel_wram)   begin m_din = m_wram_q;   m_ack = m_ram_rdy; end

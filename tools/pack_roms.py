@@ -31,25 +31,41 @@ def descriptor(rs):
 
 
 def file_fields(f):
-    """(name, size, crc, repeat) from a 3- or 4-tuple."""
+    """(name, size, crc, repeat) from a 3-, 4- or 5-tuple; size is the number of
+    bytes used. A 5th element is the file's real size when MAME loads only the
+    first `size` bytes of it (endurobl's 64 KB decrypted ROMs, 32 KB used)."""
     return f[0], f[1], f[2], (f[3] if len(f) > 3 else 1)
 
 
-def read_rom(zf, name, size, crc):
+def file_size(f):
+    return f[4] if len(f) > 4 else f[1]
+
+
+def read_rom(zf, name, size, crc, filesize=None):
+    filesize = filesize or size
+    if name == "-":
+        # a gap in a flat region (Enduro Racer's YM2151 board loads its second
+        # PCM ROM at 0x10000): zero fill, no file
+        return b"\x00" * size
     try:
         data = zf.read(name)
     except KeyError:
-        # merged sets may keep the parent files at top level and clones in dirs
+        # merged sets may keep the parent files at top level and clones in
+        # dirs, and store a file that several sets share under one name only
+        # (Enduro Racer's PCM ROMs: epr-7762.ic5 is epr-7681.ic8), so fall
+        # back to the CRC
         cands = [n for n in zf.namelist() if n.split("/")[-1] == name]
+        if not cands:
+            cands = [i.filename for i in zf.infolist() if f"{i.CRC & 0xffffffff:08x}" == crc]
         if not cands:
             raise SystemExit(f"missing ROM {name}")
         data = zf.read(cands[0])
-    if len(data) != size:
-        raise SystemExit(f"{name}: size {len(data):#x} != {size:#x}")
+    if len(data) != filesize:
+        raise SystemExit(f"{name}: size {len(data):#x} != {filesize:#x}")
     got = f"{zlib.crc32(data) & 0xffffffff:08x}"
     if got != crc:
         raise SystemExit(f"{name}: crc {got} != {crc}")
-    return data
+    return data[:size]
 
 
 def build_region(loader, roms):
@@ -97,7 +113,7 @@ def build_stream(setname, zippath):
                 n, s, c, rep = file_fields(f)
                 if rep > 1 and loader != "flat":
                     raise SystemExit(f"{n}: repeat is only supported in flat regions")
-                roms.append(read_rom(zf, n, s, c) * rep)
+                roms.append(read_rom(zf, n, s, c, file_size(f)) * rep)
             data = build_region(loader, roms)
             if len(data) > SLOT[region]:
                 raise SystemExit(f"{region}: {len(data):#x} exceeds slot {SLOT[region]:#x}")

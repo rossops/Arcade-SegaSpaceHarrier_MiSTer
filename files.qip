@@ -26,6 +26,7 @@ set_global_assignment -name SEARCH_PATH rtl/cpu/jt8051
 # line is an argument to Tcl, not a comment, and kills every build)
 set_global_assignment -name MIF_FILE rtl/cpu/jt8051/jt8051.uc
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_mcu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cpu/sh_fd1089b.sv
 set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051.v
 set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_alu.v
 set_global_assignment -name VERILOG_FILE rtl/cpu/jt8051/jt8051_ctrl.v
@@ -44,7 +45,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_dpram.sv
 
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/audio/sh_segapcm_5218.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/audio/sh_soundsys.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/audio/sh_soundsys_2203.sv
 
 set_global_assignment -name QIP_FILE rtl/pll.qip
 set_global_assignment -name QIP_FILE rtl/cpu/fx68k/fx68k.qip

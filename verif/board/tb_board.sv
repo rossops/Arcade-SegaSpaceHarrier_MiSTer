@@ -74,7 +74,7 @@ sh_core core (
     .p3_req(p3_req), .p3_addr(p3_addr), .p3_dout(p3_dout), .p3_ack(p3_ack),
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
-    .brm_wr(1'b0), .brm_addr(27'd0), .brm_din(16'd0),
+    .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),
     .p1_buttons({5'd0, 1'b0, test_sw, 1'b0, coin1, p1_start, 6'd0} | hold_now | scr_btn),
     .stick_x(scr_x), .stick_y(scr_y), .throttle(scr_thr),
     .stick_mode(scr_dpad ? 2'd2 : 2'd0), .stick_hold(scr_hold), .ana_curve(2'd0), .ana_range(2'd0),
@@ -361,6 +361,8 @@ end
 
 // ---- sound path trace: the first few latch bytes, YM2203 and PCM
 // register writes, and a once-per-second Z80 PC sample
+integer latch_from = -1;   // +latchlog=F: every latch byte in frames F..F+39 (the first 32 always)
+initial if (!$value$plusargs("latchlog=%d", latch_from)) latch_from = -1;
 integer snd_n = 0, ym_n = 0, pcmw_n = 0, ppi_n = 0, rd_n_cnt = 0, ppird_n = 0;
 integer fstream;
 initial fstream = $fopen("sndstream.txt", "w");
@@ -453,7 +455,7 @@ end
 reg obf_d;
 always @(posedge clk_sys) begin
     obf_d <= core.snd_obf_n;
-    if (!core.snd_obf_n && obf_d && snd_n < 32) begin
+    if (!core.snd_obf_n && obf_d && (snd_n < 32 || (frame >= latch_from && frame < latch_from + 40))) begin
         snd_n = snd_n + 1;
         $display("SNDLATCH f=%0d %02x", frame, core.pa0_out);
     end
@@ -477,6 +479,110 @@ always @(posedge clk_sys) begin
     end
 end
 
+// ---- the Z80's YM accesses (the 2203 at D000/D001, the 2151 on ports 00/01):
+// the first 80 in full, then totals every 100 frames
+integer ymt_n = 0, ym_wr = 0, ym_rd = 0, ymt_last = -1;
+wire ym03_go = core.soundsys.ym_access && !core.soundsys.ym_cs_d;
+wire ym51_go = core.soundsys.io_ym && !core.soundsys.ym51_cs_d;
+always @(posedge clk_sys) begin
+    if (ym03_go || ym51_go) begin
+        if (core.soundsys.mem_wr || (ym51_go && !core.soundsys.z_wr_n)) ym_wr = ym_wr + 1; else ym_rd = ym_rd + 1;
+        if (ymt_n < 80) begin
+            ymt_n = ymt_n + 1;
+            $display("YM f=%0d %s %s a=%0d d=%02x", frame, ym03_go ? "2203" : "2151",
+                     (core.soundsys.mem_wr || !core.soundsys.z_wr_n) ? "wr" : "rd", core.soundsys.z_addr[0],
+                     (core.soundsys.mem_wr || !core.soundsys.z_wr_n) ? core.soundsys.z_dout : core.soundsys.z_din);
+        end
+    end
+    if (frame % 100 == 0 && frame != ymt_last) begin
+        ymt_last = frame;
+        $display("YMTOT f=%0d wr=%0d rd=%0d", frame, ym_wr, ym_rd);
+    end
+end
+
+// ---- YM2203 register decode: key-on writes (reg 28) in full, and every
+// 100 frames the timer/prescaler view and the chip's output peaks
+reg  [7:0] ym_alat = 8'd0;
+integer    ym_kon = 0, ym_fm_pk = 0, ym_ssg_pk = 0, ymr_last = -1;
+wire signed [15:0] ym_fm_now = core.soundsys.fm_snd;
+always @(posedge clk_sys) begin
+    if (ym03_go && core.soundsys.mem_wr) begin
+        if (!core.soundsys.z_addr[0]) ym_alat = core.soundsys.z_dout;
+        else begin
+            if (ym_alat == 8'h28) begin
+                ym_kon = ym_kon + 1;
+                if (ym_kon <= 40) $display("YMKON f=%0d ch=%0d ops=%01x", frame, core.soundsys.z_dout[1:0], core.soundsys.z_dout[7:4]);
+            end
+            if (ym_alat == 8'h27 || ym_alat == 8'h22) $display("YMREG f=%0d reg=%02x val=%02x", frame, ym_alat, core.soundsys.z_dout);
+        end
+    end
+    if ((ym_fm_now > 0 ? ym_fm_now : -ym_fm_now) > ym_fm_pk) ym_fm_pk = (ym_fm_now > 0 ? ym_fm_now : -ym_fm_now);
+    if (core.soundsys.psg_a > ym_ssg_pk) ym_ssg_pk = core.soundsys.psg_a;
+    if (frame % 100 == 0 && frame != ymr_last) begin
+        ymr_last = frame;
+        $display("YMSTATE f=%0d keyons=%0d debug_view=%02x fm_peak=%0d ssg_peak=%0d", frame, ym_kon, core.soundsys.ym.u_jt12.debug_view, ym_fm_pk, ym_ssg_pk);
+        ym_fm_pk = 0; ym_ssg_pk = 0;
+    end
+end
+
+// ---- +pcmdump: the 315-5218's 256 register bytes at frames 800 and 1000,
+// in the format of tools' MAME Lua dump (scratchpad pcmdump.lua) for a diff
+integer pcmd_last = -1, pcmd_i, pcmd_f = 1000;
+initial if (!$value$plusargs("pcmdumpf=%d", pcmd_f)) pcmd_f = 1000;   // +pcmdumpf=N: the second dump frame (800 is always dumped)
+always @(posedge clk_sys) begin
+    if ($test$plusargs("pcmdump") && (frame == 800 || frame == pcmd_f) && frame != pcmd_last) begin
+        pcmd_last = frame;
+        $write("PCMREGS f=%0d", frame);
+        for (pcmd_i = 0; pcmd_i < 256; pcmd_i = pcmd_i + 1) $write(" %02x", core.soundsys.pcm.regs[pcmd_i]);
+        $write("\n");
+    end
+end
+
+// ---- +pcmtrace=CH: that channel's fetch address and byte at every tick of
+// frames 1000-1001, to diff against the Python model from the frame-1000 dump
+integer pcmt_ch = -1;
+initial if (!$value$plusargs("pcmtrace=%d", pcmt_ch)) pcmt_ch = -1;
+always @(posedge clk_sys) begin
+    if (pcmt_ch >= 0 && (frame == 1000 || frame == 1001) && core.soundsys.pcm.es == 3'd5 && core.soundsys.pcm.ch == pcmt_ch[3:0])
+        $display("PCMS f=%0d a=%06x rom_addr=%06x odd=%0d byte=%02x", frame, core.soundsys.pcm.a, {core.soundsys.pcm.rom_addr, 1'b0}, core.soundsys.pcm.rom_odd,
+                 core.soundsys.pcm.rom_byte);
+end
+
+// ---- +pcmwlog: every Z80 write to the 315-5218 in frames 1000-1001 with
+// the screen line, to set beside MAME's Lua log of the same
+integer pcmw_f = 1000;
+initial if (!$value$plusargs("pcmwlogf=%d", pcmw_f)) pcmw_f = 1000;   // +pcmwlogf=N: the two frames logged are N and N+1
+always @(posedge clk_sys) begin
+    if ($test$plusargs("pcmwlog") && (frame == pcmw_f || frame == pcmw_f + 1) && core.soundsys.pcm.cs && core.soundsys.pcm.we)
+        $display("PCMW f=%0d line=%0d off=%02x data=%02x es=%0d ch=%0d", frame, core.vcnt, core.soundsys.pcm.addr, core.soundsys.pcm.din, core.soundsys.pcm.es, core.soundsys.pcm.ch);
+end
+
+// ---- +keystream: the FD1089B key image streamed through the core's loader
+// port (brm_*) after reset, the way the MiSTer delivers it, instead of the
+// $readmemh shortcut (+keyrom). The first Enduro Racer hardware build boot-
+// looped because the core indexed that write with the raw stream offset;
+// the bench had only ever used the shortcut. Every keyed set now takes this
+// path in the gate.
+reg        brm_wr = 1'b0;
+reg [26:0] brm_addr = 27'd0;
+reg [15:0] brm_din = 16'd0;
+reg [15:0] key_img [0:4095];
+integer    ks_i;
+initial begin
+    if ($test$plusargs("keystream")) begin
+        $readmemh("key.hex", key_img);
+        @(negedge reset);
+        repeat (20) @(posedge clk_sys);
+        for (ks_i = 0; ks_i < 4096; ks_i = ks_i + 1) begin
+            @(posedge clk_sys);
+            brm_wr <= 1'b1; brm_addr <= OFF_KEY + 27'(2 * ks_i); brm_din <= key_img[ks_i];
+        end
+        @(posedge clk_sys);
+        brm_wr <= 1'b0;
+        $display("KEYSTREAM: 4096 words delivered through the loader port");
+    end
+end
+
 // ---- audio: 48 kHz stereo, raw little-endian 16-bit (audio.raw)
 integer faud;
 reg [31:0] aud_acc;      // 48000/50.3496e6 * 2^32 = 4094540: a 16-bit
@@ -489,7 +595,7 @@ initial faud = $fopen("audio.raw", "wb");
 // the same 48 kHz ticks, for fitting the mix gains against MAME's wav
 integer fcomp = 0;
 initial if ($test$plusargs("auddump")) fcomp = $fopen("audcomp.raw", "wb");
-wire [15:0] comp_fm  = core.soundsys.fm_snd;
+wire [15:0] comp_fm  = core.soundsys.b2151 ? core.soundsys.ym51_l : core.soundsys.fm_snd;   // the board's FM chip
 wire [15:0] comp_pcm = core.soundsys.pcm_l;
 wire [15:0] comp_ssg = {core.soundsys.ssg_sum, 6'd0};
 always @(posedge clk_sys) begin

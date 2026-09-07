@@ -1,0 +1,77 @@
+<misterromdescription>
+  <name>Enduro Racer (Rev A, YM2151, mask ROM sprites, FD1089B 317-0013A)</name>
+  <setname>endurora</setname>
+  <rbf>SegaSpaceHarrier</rbf>
+  <mameversion>0289</mameversion>
+  <year>1986</year>
+  <manufacturer>Sega</manufacturer>
+  <category>Racing / Driving</category>
+  <rom index="0" zip="endurora.zip|enduror.zip" md5="None">
+    <part>02 0b 01 08 08 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00</part>
+    <!-- main -->
+      <interleave output="16">
+        <part name="epr-7640a.ic97" crc="1d1dc5d4" map="10"/>
+        <part name="epr-7636a.ic84" crc="84131639" map="01"/>
+      </interleave>
+      <interleave output="16">
+        <part name="epr-7641.ic98" crc="2503ae7c" map="10"/>
+        <part name="epr-7637.ic85" crc="82a27a8c" map="01"/>
+      </interleave>
+      <interleave output="16">
+        <part name="epr-7642.ic99" crc="1c453bea" map="10"/>
+        <part name="epr-7638.ic86" crc="70544779" map="01"/>
+      </interleave>
+      <part repeat="65536">00</part>
+    <!-- sub -->
+      <interleave output="16">
+        <part name="epr-7634a.ic54" crc="aec83731" map="10"/>
+        <part name="epr-7635a.ic67" crc="b2fce96f" map="01"/>
+      </interleave>
+      <part repeat="196608">00</part>
+    <!-- z80 -->
+      <part name="epr-7682.ic58" crc="c4efbf48"/>
+      <part repeat="32768">00</part>
+    <!-- pcm -->
+      <part name="epr-7681.ic8" crc="bc0c4d12"/>
+      <part repeat="32768">00</part>
+      <part name="epr-7680.ic7" crc="627b3c8c"/>
+      <part repeat="32768">00</part>
+    <!-- mainops -->
+      <part repeat="262144">00</part>
+    <!-- sprite -->
+      <interleave output="32">
+        <part name="mpr-10146.ic36" crc="85564401" map="0001"/>
+        <part name="mpr-10144.ic28" crc="03569803" map="0010"/>
+        <part name="mpr-10142.ic18" crc="4a72251b" map="0100"/>
+        <part name="mpr-10140.ic8" crc="68ff1691" map="1000"/>
+      </interleave>
+      <interleave output="32">
+        <part name="mpr-10145.ic32" crc="3e64eec0" map="0001"/>
+        <part name="mpr-10143.ic24" crc="bdad5fd2" map="0010"/>
+        <part name="mpr-10141.ic14" crc="560360b9" map="0100"/>
+        <part name="mpr-10139.ic4" crc="863c7d9e" map="1000"/>
+      </interleave>
+    <!-- tile -->
+      <part name="epr-7644.ic31" crc="e7a4ff90"/>
+      <part name="epr-7645.ic46" crc="4caa0095"/>
+      <part name="epr-7646.ic60" crc="7e432683"/>
+    <!-- road -->
+      <part name="epr-7633.ic1" crc="6f146210"/>
+    <!-- zoom -->
+      <part name="epr-6844.ic123" crc="e3ec7bd6"/>
+    <!-- mcu -->
+      <part repeat="4096">00</part>
+    <!-- key -->
+      <part name="317-0013a.key" crc="a965b2da"/>
+  </rom>
+  <switches default="FF,7E" base="0">
+    <dip bits="0,3" name="Coin A" ids="Free Play (if both) or 1C/1C,1C/1C 2/3,1C/1C 4/5,1C/1C 5/6,2C/1C 4/3,2C/1C 3/2 5/3 6/4,2C/3C,4C/1C,3C/1C,2C/1C,7C/1C,6C/1C,5C/1C,1C/3C,1C/2C,1C/1C"/>
+    <dip bits="4,7" name="Coin B" ids="Free Play (if both) or 1C/1C,1C/1C 2/3,1C/1C 4/5,1C/1C 5/6,2C/1C 4/3,2C/1C 3/2 5/3 6/4,2C/3C,4C/1C,3C/1C,2C/1C,7C/1C,6C/1C,5C/1C,1C/3C,1C/2C,1C/1C"/>
+    <dip bits="8" name="Cabinet" ids="Upright,Wheelie"/>
+    <dip bits="9,10" name="Difficulty" ids="Hardest,Hard,Easy,Medium"/>
+    <dip bits="11,12" name="Time Adjust" ids="Hardest,Hard,Easy,Medium"/>
+    <dip bits="13,14" name="Time Control" ids="Hardest,Hard,Easy,Medium"/>
+    <dip bits="15" name="Demo Sounds" ids="On,Off"/>
+  </switches>
+  <buttons names="Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service" default="A,B,Start,X,R,L,Y,Select"/>
+</misterromdescription>

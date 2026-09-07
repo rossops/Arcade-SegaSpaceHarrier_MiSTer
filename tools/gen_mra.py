@@ -10,7 +10,7 @@ import argparse, os, sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from romsets import ROMSETS, SLOT, ORDER, DESC_SIZE
-from pack_roms import descriptor, last_region, file_fields
+from pack_roms import descriptor, last_region, file_fields, file_size
 
 # Bare name, no "Arcade-": Distribution_MiSTer strips that prefix from the
 # packaged .rbf, and the MiSTer loader matches a bare tag against both
@@ -25,24 +25,32 @@ def hexbytes(b):
 def region_parts(loader, files, slot, fill="00", pad_to_slot=True):
     lines = []
     total = 0
+    # a part attribute for the files MAME loads only the head of
+    lens = {f[0]: f' length="{f[1]:#x}"' if file_size(f) > f[1] else "" for f in files}
     files = [file_fields(f) for f in files]
     if loader != "flat" and any(rep > 1 for _, _, _, rep in files):
         raise SystemExit("repeat is only supported in flat regions")
     if loader == "flat":
         for n, s, c, rep in files:
-            # MAME ROM_RELOAD mirrors: the same file listed again
+            # MAME ROM_RELOAD mirrors: the same file listed again; "-" is a
+            # zero-filled gap (pack_roms.read_rom)
             for _ in range(rep):
-                lines.append(f'      <part name="{n}" crc="{c}"/>')
+                lines.append(f'      <part repeat="{s}">{fill}</part>' if n == "-" else f'      <part name="{n}" crc="{c}"{lens[n]}/>')
             total += s * rep
     elif loader == "w16":
         for i in range(0, len(files), 2):
             (e, s, ec, _), (o, _, oc, _) = files[i], files[i + 1]
+            if e == "-" and o == "-":
+                # a gap pair (endurobl's main region has no ROM below 0x10000)
+                lines.append(f'      <part repeat="{2 * s}">{fill}</part>')
+                total += 2 * s
+                continue
             lines.append('      <interleave output="16">')
             # map digits are byte positions, rightmost = byte 0. The stream word
             # is little-endian and must read back as {even, odd} (68000 order),
             # so the even ROM is byte 1 ("10") and the odd ROM byte 0 ("01").
-            lines.append(f'        <part name="{e}" crc="{ec}" map="10"/>')
-            lines.append(f'        <part name="{o}" crc="{oc}" map="01"/>')
+            lines.append(f'        <part name="{e}" crc="{ec}"{lens[e]} map="10"/>')
+            lines.append(f'        <part name="{o}" crc="{oc}"{lens[o]} map="01"/>')
             lines.append('      </interleave>')
             total += 2 * s
     elif loader == "x32":
@@ -54,7 +62,7 @@ def region_parts(loader, files, slot, fill="00", pad_to_slot=True):
             for k, (n, s, c, _) in enumerate(grp):
                 m = ["0"] * 4
                 m[3 - k] = "1"
-                lines.append(f'        <part name="{n}" crc="{c}" map="{"".join(m)}"/>')
+                lines.append(f'        <part name="{n}" crc="{c}"{lens[n]} map="{"".join(m)}"/>')
             lines.append('      </interleave>')
             total += 4 * grp[0][1]
     else:

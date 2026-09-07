@@ -326,6 +326,565 @@ ROMSETS = {
         "buttons": ("Gas,Brake,Start,Coin,Pause,Test,Service",
                     "A,B,Start,R,L,X,Y"),
     },
+    # Enduro Racer (Rev A). MAME 0.289 `enduror`: Space Harrier's map and video at 10 MHz,
+    # the YM2151 sound board, an FD1089B main CPU with key 317-0013A.
+    "enduror": {
+        "name": "Enduro Racer (Rev A, YM2151, FD1089B 317-0013A)",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 1,
+        "sound_board": 1,   # YM2151 + 315-5218 at 4 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("epr-7640a.ic97", 0x8000, "1d1dc5d4"),
+                ("epr-7636a.ic84", 0x8000, "84131639"),
+                ("epr-7641.ic98", 0x8000, "2503ae7c"),
+                ("epr-7637.ic85", 0x8000, "82a27a8c"),
+                ("epr-7642.ic99", 0x8000, "1c453bea"),
+                ("epr-7638.ic86", 0x8000, "70544779"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634a.ic54", 0x8000, "aec83731"),
+                ("epr-7635a.ic67", 0x8000, "b2fce96f"),
+            ]),
+            "z80": ("flat", [("epr-7682.ic58", 0x8000, "c4efbf48")]),
+            # the YM2151 board's second PCM ROM sits at 0x10000 (MAME's pcm region)
+            "pcm": ("flat", [
+                ("epr-7681.ic8", 0x8000, "bc0c4d12"),
+                ("-", 0x8000, None),
+                ("epr-7680.ic7", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+            "key": ("flat", [("317-0013a.key", 0x2000, "a965b2da")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # Enduro Racer (Rev A) with the sprites on eight 128 KB mask ROMs; everything else `enduror`.
+    "endurora": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (Rev A, YM2151, mask ROM sprites, FD1089B 317-0013A)",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 1,
+        "sound_board": 1,   # YM2151 + 315-5218 at 4 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("epr-7640a.ic97", 0x8000, "1d1dc5d4"),
+                ("epr-7636a.ic84", 0x8000, "84131639"),
+                ("epr-7641.ic98", 0x8000, "2503ae7c"),
+                ("epr-7637.ic85", 0x8000, "82a27a8c"),
+                ("epr-7642.ic99", 0x8000, "1c453bea"),
+                ("epr-7638.ic86", 0x8000, "70544779"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634a.ic54", 0x8000, "aec83731"),
+                ("epr-7635a.ic67", 0x8000, "b2fce96f"),
+            ]),
+            "z80": ("flat", [("epr-7682.ic58", 0x8000, "c4efbf48")]),
+            # the YM2151 board's second PCM ROM sits at 0x10000 (MAME's pcm region)
+            "pcm": ("flat", [
+                ("epr-7681.ic8", 0x8000, "bc0c4d12"),
+                ("-", 0x8000, None),
+                ("epr-7680.ic7", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("mpr-10146.ic36", 0x20000, "85564401"), ("mpr-10144.ic28", 0x20000, "03569803"),
+                ("mpr-10142.ic18", 0x20000, "4a72251b"), ("mpr-10140.ic8",  0x20000, "68ff1691"),
+                ("mpr-10145.ic32", 0x20000, "3e64eec0"), ("mpr-10143.ic24", 0x20000, "bdad5fd2"),
+                ("mpr-10141.ic14", 0x20000, "560360b9"), ("mpr-10139.ic4",  0x20000, "863c7d9e"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+            "key": ("flat", [("317-0013a.key", 0x2000, "a965b2da")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # Enduro Racer, the earlier program (non-A main and sub ROMs) on the YM2151 board.
+    "endurorb": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (YM2151, FD1089B 317-0013A)",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 1,
+        "sound_board": 1,   # YM2151 + 315-5218 at 4 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("epr-7640.ic97", 0x8000, "193a495b"),
+                ("epr-7636.ic84", 0x8000, "d8cedbbe"),
+                ("epr-7641.ic98", 0x8000, "2503ae7c"),
+                ("epr-7637.ic85", 0x8000, "82a27a8c"),
+                ("epr-7642.ic99", 0x8000, "1c453bea"),
+                ("epr-7638.ic86", 0x8000, "70544779"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634.ic54", 0x8000, "3e07fd32"),
+                ("epr-7635.ic67", 0x8000, "22f762ab"),
+            ]),
+            "z80": ("flat", [("epr-7682.ic58", 0x8000, "c4efbf48")]),
+            # the YM2151 board's second PCM ROM sits at 0x10000 (MAME's pcm region)
+            "pcm": ("flat", [
+                ("epr-7681.ic8", 0x8000, "bc0c4d12"),
+                ("-", 0x8000, None),
+                ("epr-7680.ic7", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+            "key": ("flat", [("317-0013a.key", 0x2000, "a965b2da")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # MAME's decrypted `endurord`: `enduror` with the main ROMs already decrypted
+    # (a plain 68000, no key). The bench's cross-check for the FD1089B.
+    "endurord": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (bootleg of Rev A, YM2151) [decrypted]",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 0,
+        "sound_board": 1,   # YM2151 + 315-5218 at 4 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("bootleg_epr-7640a.ic97", 0x8000, "f52fd496"),
+                ("bootleg_epr-7636a.ic84", 0x8000, "666136b3"),
+                ("bootleg_epr-7641.ic98", 0x8000, "2153154a"),
+                ("bootleg_epr-7637.ic85", 0x8000, "0a97992c"),
+                ("bootleg_epr-7642.ic99", 0x8000, "f6391091"),
+                ("bootleg_epr-7638.ic86", 0x8000, "79b367d7"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634a.ic54", 0x8000, "aec83731"),
+                ("epr-7635a.ic67", 0x8000, "b2fce96f"),
+            ]),
+            "z80": ("flat", [("epr-7682.ic58", 0x8000, "c4efbf48")]),
+            # the YM2151 board's second PCM ROM sits at 0x10000 (MAME's pcm region)
+            "pcm": ("flat", [
+                ("epr-7681.ic8", 0x8000, "bc0c4d12"),
+                ("-", 0x8000, None),
+                ("epr-7680.ic7", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # Enduro Racer on the YM2203 sound board (Hang-On's). MAME 0.289 `enduror1`: main
+    # ROMs 7630/7629, non-A sub ROMs, the 2203 board's Z80 and PCM ROMs.
+    "enduror1": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (YM2203, FD1089B 317-0013A)",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 1,
+        "sound_board": 0,   # YM2203 + 315-5218 at 8 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("epr-7630.ic97", 0x8000, "a1bdadab"),
+                ("epr-7629.ic84", 0x8000, "f50f4169"),
+                ("epr-7641.ic98", 0x8000, "2503ae7c"),
+                ("epr-7637.ic85", 0x8000, "82a27a8c"),
+                ("epr-7642.ic99", 0x8000, "1c453bea"),
+                ("epr-7638.ic86", 0x8000, "70544779"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634.ic54", 0x8000, "3e07fd32"),
+                ("epr-7635.ic67", 0x8000, "22f762ab"),
+            ]),
+            "z80": ("flat", [
+                ("epr-7765.ic73", 0x4000, "81c82fc9"),
+                ("epr-7764.ic72", 0x4000, "755bfdad"),
+            ]),
+            "pcm": ("flat", [
+                ("epr-7762.ic5", 0x8000, "bc0c4d12"),
+                ("epr-7763.ic6", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+            "key": ("flat", [("317-0013a.key", 0x2000, "a965b2da")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # MAME's decrypted `enduror1d`: `enduror1` with the main ROMs decrypted, no key.
+    "enduror1d": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (bootleg, YM2203) [decrypted]",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        # descriptor: sharrier map and video at 10 MHz, no MCU
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "fd1089b": 0,
+        "sound_board": 0,   # YM2203 + 315-5218 at 8 MHz
+        "spr_banks": 8,
+        "adc_reverse": 0x08,  # steering (channel 3) is PORT_REVERSE
+        "ana_mode": 2,        # enduror bike: gas / brake / bank / steer
+        "regions": {
+            "main": ("w16", [
+                ("bootleg_epr-7630.ic97", 0x8000, "b041e995"),
+                ("bootleg_epr-7629.ic84", 0x8000, "db4eff5f"),
+                ("bootleg_epr-7641.ic98", 0x8000, "2153154a"),
+                ("bootleg_epr-7637.ic85", 0x8000, "0a97992c"),
+                ("bootleg_epr-7642.ic99", 0x8000, "f6391091"),
+                ("bootleg_epr-7638.ic86", 0x8000, "79b367d7"),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634.ic54", 0x8000, "3e07fd32"),
+                ("epr-7635.ic67", 0x8000, "22f762ab"),
+            ]),
+            "z80": ("flat", [
+                ("epr-7765.ic73", 0x4000, "81c82fc9"),
+                ("epr-7764.ic72", 0x4000, "755bfdad"),
+            ]),
+            "pcm": ("flat", [
+                ("epr-7762.ic5", 0x8000, "bc0c4d12"),
+                ("epr-7763.ic6", 0x8000, "627b3c8c"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
+    # Enduro Racer bootleg set 1. MAME 0.289 `endurobl`: a plain 68000 whose
+    # opcodes come from a separate decrypted image (init_endurobl assembles it:
+    # the 7.13j/4.13h pair, loaded at 0x30000 in the main region, is the
+    # decrypted first 64 KB, and 0x10000-0x2FFFF is shared). Descriptor
+    # ops_split: program-space fetches read the mainops slot. YM2203 board.
+    "endurobl": {
+        "alt": "Enduro Racer",
+        "name": "Enduro Racer (bootleg set 1)",
+        "zipfile": "enduror",
+        "year": "1986",
+        "category": "Racing / Driving",
+        "game_id": 2,
+        "sharrier": 1,
+        "cpu10m": 1,
+        "ops_split": 1,
+        "sound_board": 0,
+        "spr_banks": 8,
+        "adc_reverse": 0x08,
+        "ana_mode": 2,
+        "regions": {
+            # MAME's maincpu region: nothing below 0x10000 (a zero gap pair)
+            "main": ("w16", [
+                ("-", 0x8000, None), ("-", 0x8000, None),
+                ("8.14j", 0x8000, "2153154a"), ("5.14h", 0x8000, "0a97992c"),
+                ("9.15j", 0x8000, "db3bff1c"), ("6.15h", 0x8000, "54b1885a"),
+                ("7.13j", 0x8000, "f1d6b4b7", 1, 0x10000), ("4.13h", 0x8000, "43bff873", 1, 0x10000),
+            ]),
+            "sub": ("w16", [
+                ("epr-7634.ic54", 0x8000, "3e07fd32"),
+                ("epr-7635.ic67", 0x8000, "22f762ab"),
+            ]),
+            "z80": ("flat", [
+                ("epr-7765.ic73", 0x4000, "81c82fc9"),
+                ("epr-7764.ic72", 0x4000, "755bfdad"),
+            ]),
+            "pcm": ("flat", [
+                ("epr-7762.ic5", 0x8000, "bc0c4d12"),
+                ("epr-7763.ic6", 0x8000, "627b3c8c"),
+            ]),
+            # the decrypted-opcode image: init_endurobl's assembly order
+            "mainops": ("w16", [
+                ("7.13j", 0x8000, "f1d6b4b7", 1, 0x10000), ("4.13h", 0x8000, "43bff873", 1, 0x10000),
+                ("8.14j", 0x8000, "2153154a"), ("5.14h", 0x8000, "0a97992c"),
+                ("9.15j", 0x8000, "db3bff1c"), ("6.15h", 0x8000, "54b1885a"),
+            ]),
+            "sprite": ("x32", [
+                ("epr-7678.ic36", 0x8000, "9fb5e656"), ("epr-7670.ic28", 0x8000, "dbbe2f6e"),
+                ("epr-7662.ic18", 0x8000, "cb0c13c5"), ("epr-7654.ic8",  0x8000, "2db6520d"),
+                ("epr-7677.ic35", 0x8000, "7764765b"), ("epr-7669.ic27", 0x8000, "f9525faa"),
+                ("epr-7661.ic17", 0x8000, "fe93a79b"), ("epr-7653.ic7",  0x8000, "46a52114"),
+                ("epr-7676.ic34", 0x8000, "2e42e0d4"), ("epr-7668.ic26", 0x8000, "e115ce33"),
+                ("epr-7660.ic16", 0x8000, "86dfbb68"), ("epr-7652.ic6",  0x8000, "2880cfdb"),
+                ("epr-7675.ic33", 0x8000, "05cd2d61"), ("epr-7667.ic25", 0x8000, "923bde9d"),
+                ("epr-7659.ic15", 0x8000, "629dc8ce"), ("epr-7651.ic5",  0x8000, "d7902bad"),
+                ("epr-7674.ic32", 0x8000, "1a129acf"), ("epr-7666.ic24", 0x8000, "23697257"),
+                ("epr-7658.ic14", 0x8000, "1677f24f"), ("epr-7650.ic4",  0x8000, "642635ec"),
+                ("epr-7673.ic31", 0x8000, "82602394"), ("epr-7665.ic23", 0x8000, "12d77607"),
+                ("epr-7657.ic13", 0x8000, "8158839c"), ("epr-7649.ic3",  0x8000, "4edba14c"),
+                ("epr-7672.ic30", 0x8000, "d11452f7"), ("epr-7664.ic22", 0x8000, "0df2cfad"),
+                ("epr-7656.ic12", 0x8000, "6c741272"), ("epr-7648.ic2",  0x8000, "983ea830"),
+                ("epr-7671.ic29", 0x8000, "b0c7fdc6"), ("epr-7663.ic21", 0x8000, "2b0b8f08"),
+                ("epr-7655.ic11", 0x8000, "3433fe7b"), ("epr-7647.ic1",  0x8000, "2e7fbec0"),
+            ]),
+            "tile": ("flat", [
+                ("epr-7644.ic31", 0x8000, "e7a4ff90"),
+                ("epr-7645.ic46", 0x8000, "4caa0095"),
+                ("epr-7646.ic60", 0x8000, "7e432683"),
+            ]),
+            "road": ("flat", [("epr-7633.ic1", 0x8000, "6f146210")]),
+            "zoom": ("flat", [("epr-6844.ic123", 0x2000, "e3ec7bd6")]),
+            "key": ("flat", [("317-0013a.key", 0x2000, "a965b2da")]),
+        },
+        # SW A coinage, SW B: cabinet, difficulty, time adjust, time control, demo sounds
+        "dip_default": "FF,7E",
+        "dips": [
+            (0, 3, "Coin A", COINAGE),
+            (4, 7, "Coin B", COINAGE),
+            (8, 8, "Cabinet", "Upright,Wheelie"),
+            (9, 10, "Difficulty", "Hardest,Hard,Easy,Medium"),
+            (11, 12, "Time Adjust", "Hardest,Hard,Easy,Medium"),
+            (13, 14, "Time Control", "Hardest,Hard,Easy,Medium"),
+            (15, 15, "Demo Sounds", "On,Off"),
+        ],
+        # start is SERVICE bit 6 on this set (the core's enduro layout);
+        # gas and brake are the pedals as digital buttons, wheelie the bank
+        "buttons": ("Gas,Brake,Start,Wheelie,Coin,Pause,Test,Service",
+                    "A,B,Start,X,R,L,Y,Select"),
+    },
+
     # Space Harrier (Rev A). MAME 0.289 `sharrier`: 10 MHz 68000s, SHARRIER
     # sprites and road, the dumped i8751 315-5163A as the main CPU's only
     # interrupt source (docs/notes/i8751_315-5163a.md).
@@ -438,6 +997,7 @@ ROMSETS = {
     # first main ROMs differ, and the MCU is 315-5163, which MAME carries as a
     # BAD_DUMP handcrafted from the decapped Rev A part.
     "sharrier1": {
+        "alt": "Space Harrier",
         "name": "Space Harrier (8751 315-5163)",
         "zipfile": "sharrier",
         "year": "1985",

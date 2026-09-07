@@ -82,3 +82,6 @@ verif/unit/z80/obj*/
 verif/unit/z80/*.txt
 # SMB share leftovers
 .smbdelete*
+
+# MAME writes its cfg here when run from the repo root (tools/*.lua sessions)
+cfg/

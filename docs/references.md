@@ -23,7 +23,7 @@ against MAME and on a DE10-Nano:
 | --- | --- |
 | `rtl/cpu/sh_m68k_bus.sv` | fx68k wrapper: unified bus, DTACK, IPL, VPA autovector |
 | `rtl/cpu/sh_rom_cache.sv` | direct-mapped 68000/Z80 ROM cache over SDRAM |
-| `rtl/audio/sh_soundsys.sv`, `sh_segapcm_5218.sv` | Z80 sound board, YM2151 glue, 315-5218 PCM (bank style is a parameter; this board uses the 512K banking) |
+| `rtl/audio/sh_soundsys.sv`, `sh_segapcm_5218.sv` | Z80 sound board (rewritten in M5/M8 as the board-selectable YM2203/YM2151 module), YM2151 glue, 315-5218 PCM (bank style is a parameter; this board uses the 512K banking) |
 | `rtl/mem/sdram.sv`, `sh_rom_loader.sv`, `sh_dpram.sv` | SDRAM controller (ports p0..p7), ioctl stream loader, two-clock byte-enabled RAM |
 | `rtl/video/sh_video_timing.sv` | video timing with the 2x output grid (retune for this board in M0) |
 | `rtl/video/sh_palette_5242.sv`, `sh_pal_lut.svh` | 315-5242 palette and resistor-ladder LUTs |

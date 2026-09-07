@@ -69,6 +69,10 @@ every convention below, and their git history shows what each decision cost.
   unit test, and a place in the Verilator board bench that dumps frames to
   diff against MAME captures. Unit benches are not enough for board-level
   sequencing; two X Board and two Y Board bugs only showed at board level.
+- Every BRAM region the loader fills (Z80 ROM, MCU ROM, key) must reach the
+  core through its loader port in at least one bench run, never only by a
+  $readmemh shortcut: the FD1089B key was routed wrong on hardware while
+  every bench run had loaded it directly (M8, a boot loop).
 - Dump timing is per consumer, not one fixed line: dump each RAM at the
   moment the renderer actually reads it (the Y Board's M6 finding; its
   `tb_board.sv` +dumpframe comment is the worked example).
@@ -80,7 +84,12 @@ every convention below, and their git history shows what each decision cost.
   tell the user to kick it, retry.
 - Simulation runs on the Mac (Verilator 5, Icarus, cocotb in `verif/.venv`,
   Python 3.12; MAME 0.289 at `/opt/homebrew/bin/mame`; MAME source at
-  `~/Code/mame`; merged ROM zips in `/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)/`).
+  `~/Code/mame` (a master checkout, NOT 0.289: read reference code with
+  `git show mame0289:path`, the tag is fetched; the PCM engine was once
+  ported from the checkout and differed from the binary, M8 finding). And
+  MAME 0.289's segapcm rewrite is wrong about the loop end: the board plays
+  Enduro Racer's engine loops that 0.289 silences, so the core keeps the
+  older rule; merged ROM zips in `/Volumes/roms/Arcade/MAME 0.289 ROMs (merged)/`).
 - MAME verification tricks that took days to learn: capture with
   `-snapview native` or layout artwork lands in the screenshot (GAMEL
   sets); `screen:snapshot()` alone does not avoid it. Lua `set_value` on

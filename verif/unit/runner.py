@@ -15,7 +15,7 @@ def run(toplevel, sources, test_module, parameters=None):
         hdl_toplevel=toplevel,
         build_dir=build_dir,
         parameters=parameters or {},
-        build_args=["-g2012"] if sim == "icarus" else [],
+        build_args=["-g2012"] if sim == "icarus" else ["-Wno-fatal", "-Wno-lint", "-Wno-style", "-Wno-MULTIDRIVEN", "-Wno-UNOPTFLAT"],
         always=True,
         timescale=("1ns", "1ps"),
     )

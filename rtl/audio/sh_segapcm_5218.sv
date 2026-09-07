@@ -22,7 +22,9 @@ module sh_segapcm_5218 #(
     input             clk,          // clk_sys
     input             reset,
     input             tick,         // one pulse per 128 chip clocks (31.25 kHz)
-    input       [7:0] bankmask,     // 0x70 (BANK_512, bank bits 6:4) on every set here
+    input       [7:0] bankmask,     // 0x70 (BANK_512, bank bits 6:4) on the 315-5218
+    input             discrete,     // the YM2203 board's discrete-logic PCM: 8 voices in
+                                    // channel slots 8-15, no banking (MAME 0.289)
 
     // Z80 register access (F000-F0FF)
     input             cs,
@@ -59,6 +61,9 @@ reg [23:0] loop;
 reg  [7:0] endb, delta, volr, voll, flags;
 reg  [7:0] bank;
 reg        rom_odd;
+reg  [7:0] rom_byte;                // the fetched sample, registered at the ack: the SDRAM's
+                                    // 100 MHz data register must not feed the multiply directly
+                                    // (a -0.4 ns cross-domain path in the first M8 build)
 reg signed [19:0] sum_l, sum_r;
 
 // The engine spreads one channel over tens of clocks (E_LOAD reads the
@@ -105,11 +110,13 @@ always @(posedge clk) begin
         case (es)
         E_IDLE: if (tick) begin ch <= 4'd0; sum_l <= 0; sum_r <= 0; es <= E_LOAD; end
         E_LOAD: begin
-            flags <= regs[{1'b1, ch, 3'd6}];
-            bank  <= regs[{1'b1, ch, 3'd6}] & bankmask;
+            flags <= regs[{1'b1, ch, 3'd6}] | {7'd0, discrete && !ch[3]};   // slots 0-7 are RAM only on the discrete board
+            bank  <= discrete ? 8'd0 : regs[{1'b1, ch, 3'd6}] & bankmask;
             a     <= {regs[{1'b1, ch, 3'd5}], regs[{1'b1, ch, 3'd4}], low[ch]};
             loop  <= {regs[{1'b0, ch, 3'd5}], regs[{1'b0, ch, 3'd4}], 8'd0};
-            endb  <= regs[{1'b0, ch, 3'd6}] + 8'd1;
+            endb  <= regs[{1'b0, ch, 3'd6}] + 8'd1;   // the page after end, as MAME through 0.288: 0.289's rewrite compares
+                                                    // against end itself and silences Enduro Racer's engine loops (loop
+                                                    // page == end page), which the board plays (M8 hardware test)
             delta <= regs[{1'b0, ch, 3'd7}];
             voll  <= regs[{1'b0, ch, 3'd2}] & 8'h7F;
             volr  <= regs[{1'b0, ch, 3'd3}] & 8'h7F;
@@ -136,11 +143,11 @@ always @(posedge clk) begin
             rom_req  <= 1'b1;
             es <= E_WAIT;
         end
-        E_WAIT: if (rom_ack) es <= E_ACC;
+        E_WAIT: if (rom_ack) begin rom_byte <= rom_odd ? rom_dout[15:8] : rom_dout[7:0]; es <= E_ACC; end
         E_ACC: begin
             logic signed [8:0] v;
             logic [23:0] na;
-            v = $signed({1'b0, rom_odd ? rom_dout[15:8] : rom_dout[7:0]}) - 9'sd128;
+            v = $signed({1'b0, rom_byte}) - 9'sd128;
             sum_l <= sum_l + v * $signed({1'b0, voll});
             sum_r <= sum_r + v * $signed({1'b0, volr});
             na = a + {16'd0, delta};

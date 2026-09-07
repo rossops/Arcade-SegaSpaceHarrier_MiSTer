@@ -35,5 +35,29 @@ grep -E "MCUSTICK f=90[6-9] x=35 y=cb" verif/board/out/m7_run.log > /dev/null ||
 # ends a handful of frames apart in the two: MAME's 900 was our 905)
 $PY tools/board_check.py verif/board/out 900 sharrier
 $PY tools/frame_diff.py verif/board/out $G/f900 --window 12 | tee /dev/stderr | grep -q "71680/71680 pixels equal" || { echo "M7: frame 900 differs from MAME"; exit 1; }
+# (after the frame-900 compare: this run replaces the frames in verif/board/out)
+# a coin and a start: the MCU's vblank interrupt must fire once a frame (one
+# sound-latch byte a frame, as MAME's 68000 sends), the coin command must
+# reach the latch, and the speech must be playing on PCM slot 11 thirty
+# frames after the start (MAME: loop 1000, end 3f, volume 3f)
+make -C verif/board run GAME=sharrier FRAMES=830 DUMPFRAME=-1 COIN=700 PLUSARGS="+latchlog=695 +pcmdump +pcmdumpf=810 +script=$PWD/verif/board/script_m7_start.txt" > verif/board/out/m7_coin.log 2>&1
+N=$(grep -cE "^SNDLATCH f=(69[5-9]|7[0-3][0-9]) " verif/board/out/m7_coin.log)
+[ "$N" -eq 40 ] || { echo "M7: $N latch bytes in 40 frames around the coin, expected one a frame"; exit 1; }
+grep -qE "^SNDLATCH f=[0-9]+ e7" verif/board/out/m7_coin.log || { echo "M7: the coin command never reached the sound latch"; exit 1; }
+$PY - <<'PYEOF' || exit 1
+import re
+text = open("verif/board/out/m7_coin.log").read()
+i = text.find("PCMREGS f=810")
+if i >= 0:
+    # the 256 bytes may be split by lines other blocks print in between
+    toks = [t for t in text[i + len("PCMREGS f=810"):].split() if re.fullmatch(r"[0-9a-f]{2}", t)][:256]
+    if len(toks) == 256:
+        b = [int(x, 16) for x in toks]
+        r, h = b[11*8:11*8+8], b[0x80+11*8:0x80+11*8+8]
+        ok = not (h[6] & 1) and r[2] == 0x3f and (r[5], r[4], r[6]) == (0x10, 0x00, 0x3f)
+        print(f"speech on slot 11 at frame 810: vol {r[2]:02x} loop {r[5]:02x}{r[4]:02x} end {r[6]:02x} flags {h[6]:02x}", "OK" if ok else "MISSING")
+        raise SystemExit(0 if ok else 1)
+raise SystemExit("no complete PCM dump at frame 810")
+PYEOF
 
 echo "M7 gate passed"

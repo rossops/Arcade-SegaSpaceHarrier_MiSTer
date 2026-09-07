@@ -25,7 +25,7 @@ the open questions; `docs/references.md` says where every file came from.
 | M6 | Hang-On playable on hardware | done (2026-09-03) |
 | M7 | Space Harrier (sharrier video, i8751) | done (2026-09-05) |
 | M7b | Space Harrier gamepad feel (optional): MAME-style stick slew | not started |
-| M8 | Enduro Racer (FD1089B, YM2151 board) | not started |
+| M8 | Enduro Racer (FD1089B, YM2151 board) | done (2026-09-06) |
 | M9 | Super Hang-On conversions | not started |
 | M10 | Board reference doc + recovered PAL equations (optional) | not started |
 | M11 | Enduro Racer 60 fps mode via OSD CPU overclock (optional) | not started |
@@ -81,9 +81,30 @@ behind each entry.
   dumped 315-5163A program, and its external data space is bridged onto
   the main 68000 bus as a second bus master: it holds the 68000 through
   fx68k's HALT, runs one byte cycle through the same decode the CPU
-  uses, and releases. The one level the MCU drives, IRQ 4 once per
-  vblank, is latched until the 68000's acknowledge, as MAME's HOLD_LINE
-  amounts to.
+  uses, and releases. The one level the
+  MCU drives, IRQ 4 once per vblank, is armed when the MCU asserts it
+  and dropped at the 68000's acknowledge, MAME's HOLD_LINE exactly. An
+  earlier version re-armed from the pin while the MCU still held it and
+  interrupted twice a frame, which lost the coin jingle and the speech
+  without disturbing a single frame of the demo.
+- The PCM engine keeps the loop rule MAME used through 0.288 (a voice
+  wraps or stops when its page passes the end register) and the
+  16-voice 315-5218 with banking on both sound boards. MAME 0.289
+  rewrote the device: the end check lost its plus one, and the YM2203
+  board became an 8-voice discrete model without banking. We tried
+  0.289's rules because the M5 model came from the older source and
+  Enduro Racer's attract audio scored 0.87 against 0.289's recording;
+  on the board 0.289's rule turned out to silence Enduro Racer's engine
+  loops, which the game programs with the loop page equal to the end
+  page, and the older rule brings them back. So the older MAME wins on
+  hardware evidence, and the M8 audio gate records its reference with
+  a MAME 0.289 built with that rule restored (tools/mame_ref_build.sh).
+- Enduro Racer's FD1089B is decrypted in the core, not in the MRA: a
+  combinational table block between the ROM cache and the 68000, keyed
+  by the set's 317-0013A image and the fetch type, ported from MAME's
+  fd1089.cpp. Checked word for word against MAME's decrypted sets: the
+  only differences are two words at 0xFF0 the decrypted bootlegs
+  patch themselves.
 - Space Harrier's attract demo drifts against MAME by one frame per
   450 or so, with the scene otherwise identical: the MCU's 71 bus
   accesses a frame halt the 68000 for about 42 us that MAME's 68000
