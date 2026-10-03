@@ -43,6 +43,13 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_rom_loader.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/sh_dpram.sv
 
+# JimmyStones' pause and hiscore modules (vendored; hiscore.v's RAM wrapper
+# carries one local patch, docs/DESIGN.md M12) and the glue
+# that puts hiscore.v behind the 16-bit ioctl and the core's byte port
+set_global_assignment -name VERILOG_FILE rtl/pause/pause.v
+set_global_assignment -name VERILOG_FILE rtl/hiscore/hiscore.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/hiscore/sh_hiscore.sv
+
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/audio/sh_segapcm_5218.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/audio/sh_soundsys.sv
 

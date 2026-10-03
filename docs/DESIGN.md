@@ -349,6 +349,8 @@ the whole main map (open question 2 for what the real board does to the
 | `rtl/cpu/mcs51/` + `rtl/cpu/sh_mcu_bridge.sv` | vendored 8051 core (open question 3) and the main-bus window |
 | `rtl/cpu/sh_fd1089b.sv` | table decrypt between cache and main CPU (M8) |
 | `rtl/audio/jt03/` | vendored YM2203 (M5) |
+| `rtl/pause/pause.v`, `rtl/hiscore/hiscore.v` | JimmyStones' pause and hiscore modules, vendored (M12; one local patch to hiscore.v's RAM wrapper) |
+| `rtl/hiscore/sh_hiscore.sv` | hiscore.v behind the 16-bit ioctl: word-to-byte replay on download, byte pairs on upload (M12) |
 | `verif/models/tilemap_hangon.py`, `road_hangon.py`, `sprite_hangon.py`, `sprite_sharrier.py`, `mixer_hangon.py`, `i8255.py`, `fd1089.py` | golden models, ported line for line from MAME |
 
 ### ROM stream and descriptor
@@ -444,6 +446,7 @@ on the Mac, Quartus on the Windows box, hardware by the user.
 | M8 | Enduro Racer: FD1089B, YM2151 board (jt51 + PCM at 4 MHz), `enduror1` on the 2203 board, bootleg opcode slot, `endurob2` 2x2203 | enduror + enduror1 frames and sound vs MAME; decrypted sets as cross-checks; plays on hardware |
 | M9 | Super Hang-On conversions: `shangonrb` (hangon map at 10 MHz + 2151 board), then FD1094 for `shangonro`/`shangonho` | frames vs MAME; plays on hardware |
 | M10 (optional) | Board reference for porters and emulator devs: recover the real PAL/PLS equations from the dumped fuse maps (315-5118/5119/5120, 315-5103, 315-5121) with MAME's jedutil and check them against our decode — worth pulling earlier if they answer an open question; then a curated hardware write-up with block diagrams (buses, arbitration, clocks, resets, per-line renderer timing), the sound byte-stream protocol, and the i8751 contract, every claim labelled primary-source or verified-reconstruction. No pinouts or analog values we cannot verify; cite the service manual for those | equations match or correct the RTL's decode; the doc stands alone for someone porting the core without this repo |
+| M12 | Pause and hiscores: JimmyStones' Pause_MiSTer (button toggle, OSD hold, dimming) and Hiscores_MiSTer behind the 16-bit ioctl, the way the X Board's M21 and the Y Board's M8 did it. No battery RAM here, so the saved file is the score table alone; every supported set gets its hiscore.dat lines, read back from MAME's RAM | `check_hiscore.sh`: Enduro Racer's shifted table restored into work RAM and read back through the upload path; pause dimming and a restore on hardware |
 | M11 (optional, after M8) | Enduro Racer 60 fps mode: an opt-in OSD CPU-speed for both 68000s. Measured in MAME (2026-09-01, endurord attract demo): the game is vblank-synced but overruns frames under load, updating sprites and road on an irregular 1-2 frame cadence — a CPU-bound 60 fps engine, not a locked 30, so no ROM patch is needed, just headroom. The X Board's parked "CPU overclock" design carries over: bigger increments in the existing fractional clock-enable accumulators, both CPUs together, everything else (frame timing, sound, ADC, renderers, watchdog) at hardware rate. First step is re-measuring during real gameplay, where load is highest, in case anything is tied to a half-rate counter after all | sim: the update-cadence probe shows every-frame updates at the chosen speed in scenes that dropped frames at 10 MHz, with the sound handshake and watchdog undisturbed; hardware: the user's feel test on the DE10, default speed stays the PCB's 10 MHz |
 
 M0 findings (2026-08-31). The gate is green end to end: lint, emu
@@ -1185,6 +1188,155 @@ per-segment lag does not fully recover it either, because the engine's
 modulation is the sum of voices whose volume updates land on different
 frames in the two; the spectra of the late window still match band for
 band. The gate threshold for that set is 0.85 with this beside it.
+
+### M11 working notes (Enduro Racer 60 fps mode, from 2026-09-07)
+
+Re-measured in MAME 0.289 with a sprite-RAM hash per frame (scratchpad
+cadence.lua; the bench has the same probe as CADENCE). The attract
+demo updates every frame once the race is under way (100 of 100 from
+frame 1200), dropping frames only in the busy first seconds (75 of
+100 in 1100-1200). In play, pedal held from the start, the first two
+hundred frames of the race update 81 and 82 of 100, then 99 cruising,
+so the game is CPU-bound exactly when it matters. Our 68000 sits
+behind an SDRAM cache and drops more: the attract demo slid from
+eight frames ahead of MAME at frame 600 to one behind at 1400.
+
+The option: "Enduro Racer CPU" in the OSD (status bits 29:28), PCB
+10 MHz, 12.5, 15 or 20 MHz, applied only when the descriptor's game id
+is Enduro Racer's, raising the increment of the 10 MHz enable
+accumulator for both 68000s; the sound board, the ADC, the renderers,
+the interrupts and the watchdog stay at the PCB's rate. The bench
+takes +boost=N and reports CADENCE every 100 frames.
+
+At the PCB's 10 MHz the core's attract demo updates 73 of 100 in the
+busy window (MAME: 75) and every frame after, pixel-exact with MAME at
+frame 1400 one frame apart. So the attract drops no more frames here
+than in MAME, and the eight-frames-ahead to one-behind slide between
+frames 600 and 1400 is the boot and that one busy window, not a steady
+deficit. The case for the option rests on play, where MAME itself
+drops a fifth of the frames. In play at the PCB's speed (coin at 700,
+start at 780, pedal from 900) the core updates 81, 82 and 99 of 100
+in frames 1200-1500, MAME's numbers to the frame: the core's 68000
+behind its cache is no slower than MAME's at this game, and the
+option is about the PCB's own limit.
+
+At 20 MHz (both 68000s, +boost=3) the attract's busy window goes from
+73 to 86 of 100 and the alternating phase shortens from about 45
+frames to 30, but does not vanish; the demo then runs ten frames
+ahead of MAME's and diverges, as more physics steps will. Play at
+20 MHz shows 81, 81 and 92, but the play windows are polluted by the
+bike crashing under a held pedal with no steering, in MAME too, so
+the attract's busy window is the metric. Doubling the CPU clock
+bought less than a third of the deficit: the 68000 must be waiting on
+memory or on the other CPU, which the BUSWAIT probe measures next.
+
+BUSWAIT, per 100 frames of 83.8 M clocks, through the busy window:
+at the PCB's speed the main 68000 has a bus cycle open 46 M clocks
+and waits 6.8 M of them on the ROM cache, 0.1 M on the shared RAM;
+the sub 40 M open, 4.9 M on its ROM cache, 3.0 M on the shared RAM.
+At 20 MHz: main 48 M open, 13.0 M on ROM; sub 45 M open, 10.5 M on
+ROM and 5.7 M on the shared RAM. The open time hardly moves because a
+68000 waiting for vblank polls the bus, so it is no load metric; the
+waits are: every clock of extra speed is spent on the same absolute
+cache and arbiter latencies, and the sub, which owns the road, waits
+a fifth of its time. Whether a dropped frame is the main CPU's own
+work or its wait for the sub's frame is what the program-counter
+sampler (pcsample) says next.
+
+It says neither: through the busy window at 20 MHz the main 68000
+spends 71 percent of the samples in its vblank wait (`tst.b $40400 /
+beq` at 0x186C, the flag its IRQ 4 handler sets) and the sub 67
+percent in its own (`btst #5,(A5) / beq` at 0x4C0). Both CPUs are
+idle most of the window in which the sprite RAM changes on only
+three frames in four. So those are not dropped frames from an
+overrun; they are the game's own pacing in that phase, and the
+question becomes whether a faster CPU changes it at all, which a
+MAME built with Enduro Racer's two 68000s at 20 MHz answers without
+our core in the loop.
+
+It answers no. MAME 0.289 with both 68000s at 20 MHz (a fresh
+worktree with the PCM rule and the two clocks patched) updates 87 of
+100 in the attract's busy window against 75 at 10 MHz, and in play
+81, 81 and 92 against 81, 82 and 99; our core at 20 MHz gave 86 and
+81, 81, 92, the same to the frame. So the core reproduces MAME at both
+speeds, and doubling the CPU shortens the race-start alternation from
+about 40 frames to 30 in both, a quarter of a second, and changes
+nothing else: cruising already updates every frame, and the other
+low windows are the bike crashing and the game's own sequences. The
+premise of the 2026-09-01 note, a CPU-bound engine dropping frames
+under load, does not survive the program-counter sampler: both CPUs
+idle in their vblank waits through the window. There is no 60 fps to
+unlock here because the game is already at 60 except where it chooses
+not to be. What the option buys is that quarter second at the start
+of a race. Whether that is worth a switch is the user's call; the
+measurement tooling (CADENCE, BUSWAIT, pcsample, the clock-scaled
+MAME build) stays either way.
+
+### M12: pause and hiscores
+
+The X Board's M21 and the Y Board's M8, ported. JimmyStones' Pause_MiSTer
+and Hiscores_MiSTer are vendored as `rtl/pause/pause.v` (0004, upstream
+b93a5e0) and `rtl/hiscore/hiscore.v` (0014, upstream 31789f3); the X
+Board's DESIGN.md has the long version of why the glue exists (hps_io is
+16 bits wide and hiscore.v parses bytes). What is different here:
+
+- This board has no battery RAM, so there was no NVRAM save to share a
+  file with and nothing to lose: the MRA's `<nvram index="4">` is the
+  score table alone, sized to the hiscore.dat entries back to back, and
+  `<rom index="5">` carries the entries (the X and Y Board indices, so the
+  three MRAs read alike). The OSD's "Save settings" writes the file; the
+  "Autosave hiscores" option writes it on every OSD open.
+- Every hiscore.dat line of this family points into the main CPU's 16 KB
+  work RAM (040000 on the sharrier map, 20C000 on hangon's), so the core's
+  hiscore port is one byte port on that RAM: reads on its spare second
+  port (one clock, as hiscore.v's compare loop expects), writes borrowing
+  the CPU's port while the CPUs and the MCU are paused, decoded with the
+  CPU's own map so a stray address goes nowhere.
+- MAME's lines are right for every set, read back from the games' RAM:
+  Hang-On (and its clones) `20c488,4,01,00` + `20d800,4a0,01,20`; Space
+  Harrier `40488,4,01,00` + `43400,3dc,01,20` + `437dc,2,00,00`; the
+  Enduro Racer sets `43400,4a0,01,20` + `43b90,10,99,99`. Each game
+  writes its table once, in its first frame. The 4-byte flag word of
+  Hang-On and Space Harrier reads 00 until frame 412 and 1044 of the
+  attract respectively (7 and 17 s), and hiscore.v restores only once
+  every line's start and end bytes match, so those two games get their
+  scores back then, mid-game if a coin went in first; MAME's hiscore
+  plugin behaves the same way with the same lines. Enduro Racer's lines
+  match from the first frames and its table is back a third of a second
+  after reset. Enduro Racer also rewrites the 16-byte lap-time entry
+  once, in frame 805 of the attract, with the same default bytes; whether
+  that clobbers a restored best lap is a question for the hardware test.
+- Hang-On's table is 1188 bytes and Enduro Racer's 1200, so the score
+  buffer is 2 KB (`HS_SCOREWIDTH` 11) and the config lines carry two-byte
+  lengths (`CFG_LENGTHWIDTH` 2), as on the Y Board.
+- The pause module replaces the level-sensitive pause: the mapped button
+  now toggles, the OSD holds the pause when the "Pause when OSD open"
+  option is on, hiscore.v asks for it around its RAM accesses, and after
+  10 s paused the picture dims (an OSD option, on by default). Everything
+  the core gates on `pause` (both 68000 enables, the sound enables, the
+  ADC, the MCU's clock enable) stops together, so the MCU bridge cannot be
+  mid-cycle for longer than the eight paused clocks hiscore.v pads its
+  accesses with.
+
+- One local patch to the vendored hiscore.v. Its RAM wrapper `dpram_hs`
+  describes both ports in one always block, and Quartus 17 only infers
+  block RAM from it for the four small config tables. The two score
+  buffers (one written from both ports, one with port B unconnected) come
+  out as flip-flops, with no message saying so. The X and Y Board builds
+  carry them that way too, 2,056 and 4,104 registers per buffer, small
+  enough that nobody noticed. At 2 KB here it was 16,392 registers each
+  plus the read multiplexers, 46,372 ALMs against the device's 41,910,
+  and the first build failed in the fitter. `dpram_hs` now instantiates
+  altsyncram on the Quartus side with the same read-during-write
+  behaviour (new data on a port's own write, old data across ports); the
+  simulation path is upstream's code untouched.
+
+Verification: `verif/board/check_hiscore.sh` boots Enduro Racer with a
+shifted copy of its default table streamed in as the index 4 file,
+confirms the work RAM holds that copy at frame 60 after the game's own
+fill, then opens the OSD and reads the table back through the index 4
+upload path. The tool tests check that every line lies in the work RAM of
+its set's map and that the MRA's nvram size equals the table.
 
 ## 5. Open questions (MAME is the default answer until hardware says otherwise)
 

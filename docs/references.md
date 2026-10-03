@@ -66,6 +66,12 @@ line renderer), `verif/models/sprite_hangon.py` and `verif/unit/sprite/`.
 | `rtl/audio/jt51/` | https://github.com/jotego/jt51 (`hdl/`) | `985a573dcfc1ff135553a39f7eae21d18ba57cbe` | GPL-3 |
 | `rtl/audio/T80/` | Wallner/MikeJ/Sorgelig, via Meathax's System 32 core | as vendored | BSD-style |
 | `verif/board/tv80/` | tv80 (Guy Hutchison, opencores), simulation-only Z80 | as vendored | MIT-style |
+| `rtl/pause/pause.v` | https://github.com/JimmyStones/Pause_MiSTer (version 0004) | `b93a5e0` | GPL-3 |
+| `rtl/hiscore/hiscore.v` | https://github.com/JimmyStones/Hiscores_MiSTer (version 0014; `nvram.v` not used). One local patch: `dpram_hs` instantiates altsyncram on the Quartus side (docs/DESIGN.md M12) | `31789f3` | GPL-3 |
+
+Added in M12: `rtl/hiscore/sh_hiscore.sv` (hiscore.v behind the 16-bit
+ioctl, the X Board's `xb_hiscore.sv` with this board's buffer sizes) and
+`tools/mame_hiscore_probe.lua` from the X Board core.
 
 Vendored in M5: `rtl/audio/jt03/` — the jt12 FM core subset that jt03
 (YM2203) needs, taken from Meathax's System 32 core's vendored jt12 tree

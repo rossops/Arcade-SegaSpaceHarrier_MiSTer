@@ -137,7 +137,10 @@ localparam CONF_STR = {
     "O[24:23],Analog response,Linear,Soft,Softer;",
     "O[26:25],Analog range,100%,75%,50%;",
     "O[27],Stick re-centering,On,Off;",
+    "O[29:28],Enduro Racer CPU,10 MHz (PCB),12.5 MHz,15 MHz,20 MHz;",
     "O[10],Pause when OSD open,Off,On;",
+    "O[30],Dim video after 10s,On,Off;",
+    "H4O[31],Autosave hiscores,Off,On;",
     "-;",
     "DIP;",
     "-;",
@@ -162,10 +165,10 @@ pll pll (
 wire        rom_loaded;
 wire  [1:0] buttons;
 wire [63:0] status;
-wire        ioctl_download, ioctl_wr, ioctl_wait;
+wire        ioctl_download, ioctl_upload, ioctl_wr, ioctl_wait;
 wire [15:0] ioctl_index;
 wire [26:0] ioctl_addr;
-wire [15:0] ioctl_dout;
+wire [15:0] ioctl_dout, ioctl_din;
 wire [31:0] joystick_0, joystick_1;
 wire [15:0] joystick_l_analog_0;
 wire [15:0] joystick_r_analog_0;
@@ -194,7 +197,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io (
 
     .buttons(buttons),
     .status(status),
-    .status_menumask(16'd0),
+    .status_menumask({11'd0, ~hs_configured, 4'd0}),   // H4: no hiscore table in the MRA
     .gamma_bus(gamma_bus),
 
     .ioctl_download(ioctl_download),
@@ -203,6 +206,11 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io (
     .ioctl_dout(ioctl_dout),
     .ioctl_index(ioctl_index),
     .ioctl_wait(ioctl_wait),
+    // the hiscore table is the only thing saved (no battery RAM on this board)
+    .ioctl_upload(ioctl_upload),
+    .ioctl_upload_req(hs_upload_req),
+    .ioctl_upload_index(8'd4),
+    .ioctl_din(ioctl_din),
 
     .joystick_0(joystick_0),
     .joystick_1(joystick_1),
@@ -286,16 +294,52 @@ wire        btn_coin  = sh_btns ? p1_btn[8]  : p1_btn[7];
 wire        btn_pause = sh_btns ? p1_btn[9]  : p1_btn[8];
 wire        btn_test  = sh_btns ? p1_btn[10] : p1_btn[9];
 wire        btn_serv  = sh_btns ? p1_btn[11] : p1_btn[10];
-wire pause = btn_pause | (status[10] & OSD_STATUS);
+
+//////////////////////////////   PAUSE   //////////////////////////////////////
+// JimmyStones' pause module: the mapped button toggles, the OSD holds it
+// (status[10]), and the hiscore module asks for it around its RAM accesses;
+// reset clears the toggle. After 10 s paused the picture is dimmed
+// (status[30], on by default) against burn-in.
+wire  [7:0] r, g, b;
+wire        pause, hs_pause;
+wire [23:0] rgb_paused;
+pause #(.RW(8), .GW(8), .BW(8), .CLKSPD(50)) pause_sys (
+    .clk_sys(clk_sys),
+    .reset(reset),
+    .user_button(btn_pause),
+    .pause_request(hs_pause),
+    .options({~status[30], status[10]}),   // [1] dim after 10 s, [0] pause in OSD
+    .OSD_STATUS(OSD_STATUS),
+    .r(r), .g(g), .b(b),
+    .pause_cpu(pause),
+    .rgb_out(rgb_paused)
+);
+
+//////////////////////////////   HISCORE   ////////////////////////////////////
+// No battery RAM on this board: every game refills its score table from ROM
+// at boot. The MRA carries the hiscore.dat entries as <rom index="5"> and
+// the table itself is the <nvram index="4"> file; hiscore.v restores it once
+// the game's own defaults are in place and reads it back on OSD open.
+wire        hs_upload_req, hs_configured, hs_write, hs_rd, hs_wr;
+wire [23:0] hs_addr;
+wire  [7:0] hs_din, hs_dout;
+sh_hiscore hiscore (
+    .clk(clk_sys), .reset(reset), .paused(pause), .autosave(status[31]), .OSD_STATUS(OSD_STATUS),
+    .ioctl_download(ioctl_download), .ioctl_upload(ioctl_upload), .ioctl_wr(ioctl_wr),
+    .ioctl_addr(ioctl_addr), .ioctl_index(ioctl_index[7:0]), .ioctl_dout(ioctl_dout), .ioctl_din(ioctl_din),
+    .upload_req(hs_upload_req), .configured(hs_configured),
+    .ram_addr(hs_addr), .ram_din(hs_din), .ram_dout(hs_dout),
+    .ram_write(hs_write), .ram_rd(hs_rd), .ram_wr(hs_wr), .pause_req(hs_pause)
+);
 
 //////////////////////////////   CORE   ///////////////////////////////////////
-wire  [7:0] r, g, b;
 wire        ce_pix, hs, vs, hb, vb;
 wire signed [15:0] aud_l, aud_r;
 
 sh_core core (
     .clk_sys(clk_sys), .clk_ram(clk_ram), .reset(reset), .pause(pause),
     .board_desc(board_desc),
+    .hs_addr(hs_addr), .hs_din(hs_din), .hs_dout(hs_dout), .hs_write(hs_write), .hs_rd(hs_rd), .hs_wr(hs_wr),
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
@@ -305,7 +349,7 @@ sh_core core (
     .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),
     .p1_buttons(p1_btn),
     .stick_x(joystick_l_analog_0[7:0]), .stick_y(joystick_l_analog_0[15:8]),
-    .throttle(joystick_r_analog_0[15:8] ^ 8'h80), .stick_mode(stick_mode), .stick_hold(status[27]),
+    .throttle(joystick_r_analog_0[15:8] ^ 8'h80), .stick_mode(stick_mode), .stick_hold(status[27]), .cpu_boost(status[29:28]),
     .ana_curve(status[24:23]), .ana_range(status[26:25]),
     .dsw_a(dsw_a), .dsw_b(dsw_b),
     .service(btn_serv), .test(status[7] | btn_test),
@@ -338,7 +382,7 @@ arcade_video #(.WIDTH(320), .DW(24), .GAMMA(1)) arcade_video (
     .gamma_bus(gamma_bus),
     .clk_video(clk_sys),
     .ce_pix(ce_pix),
-    .RGB_in({r, g, b}),
+    .RGB_in(rgb_paused),
     .HBlank(hb),
     .VBlank(vb),
     .HSync(hs),

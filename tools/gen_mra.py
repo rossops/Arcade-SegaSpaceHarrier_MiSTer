@@ -17,6 +17,36 @@ from pack_roms import descriptor, last_region, file_fields, file_size
 # SegaSpaceHarrier_*.rbf and Arcade-SegaSpaceHarrier_*.rbf (X Board issue #3).
 RBF = "SegaSpaceHarrier"
 
+# hiscore.v's config header (<rom index="5">): wait 0.34 s after reset, then
+# check every 1.3 ms until the game's defaults are in place, and 8 paused
+# cycles around each RAM access. The X and Y Board cores use the same values.
+HS_HEADER = (
+    (0x00FFFFFF).to_bytes(4, "big") +   # START_WAIT
+    (0xFFFF).to_bytes(2, "big") +       # CHECK_WAIT
+    (4).to_bytes(2, "big") +            # CHECK_HOLD
+    (4).to_bytes(2, "big") +            # WRITE_HOLD
+    (1).to_bytes(2, "big") +            # WRITE_REPEATCOUNT
+    (15).to_bytes(2, "big") +           # WRITE_REPEATWAIT
+    bytes([8, 0]))                      # ACCESS_PAUSEPAD, CHANGEMASK
+HS_BUFFER = 2048                        # sh_hiscore's score buffer (HS_SCOREWIDTH 11)
+
+
+def hiscore_config(rs):
+    """The <rom index="5"> bytes for a set with a `hiscore` table."""
+    out = bytearray(HS_HEADER)
+    for addr, length, start, end in rs["hiscore"]:
+        if not 0 < length < 0x10000:
+            raise SystemExit("hiscore entry length must fit two bytes")
+        out += addr.to_bytes(4, "big") + length.to_bytes(2, "big") + bytes([start, end])
+    if hiscore_size(rs) > HS_BUFFER:
+        raise SystemExit("hiscore table larger than the score buffer")
+    return bytes(out)
+
+
+def hiscore_size(rs):
+    """The <nvram index="4"> size: the entries back to back."""
+    return sum(e[1] for e in rs["hiscore"])
+
 
 def hexbytes(b):
     return " ".join(f"{x:02x}" for x in b)
@@ -97,7 +127,13 @@ def make_mra(key, rs):
         # region a set populates ships unpadded
         L += region_parts(loader, files, SLOT[region], "00", idx != last)
     L.append('  </rom>')
-    # no battery RAM on this board, so no <nvram> element
+    # no battery RAM on this board: the only saved file is hiscore.v's table
+    # (docs/DESIGN.md M12), restored into the game's work RAM
+    if "hiscore" in rs:
+        L.append('  <rom index="5">')
+        L.append(f'    <part>{hexbytes(hiscore_config(rs))}</part>')
+        L.append('  </rom>')
+        L.append(f'  <nvram index="4" size="{hiscore_size(rs)}"/>')
     # DIP switches: raw port values (1 = off). Defaults are MAME's.
     L.append(f'  <switches default="{rs["dip_default"]}" base="0">')
     for lo, hi, name, ids in rs["dips"]:

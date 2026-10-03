@@ -20,6 +20,17 @@ module sh_core (
 
     input board_desc_t board_desc,
 
+    // hiscore (M12): a byte port on the main CPU's work RAM with the full
+    // 24-bit CPU address, decoded like the CPU's. Reads answer one clock after
+    // the address on the RAM's second port; writes borrow the CPU's port while
+    // the CPUs are paused.
+    input      [23:0] hs_addr,
+    input       [7:0] hs_din,
+    output      [7:0] hs_dout,
+    input             hs_write,     // write strobe (with hs_wr)
+    input             hs_rd,        // hiscore holds the read port
+    input             hs_wr,        // hiscore holds the write port
+
     // SDRAM read ports (sdram.sv): p0 main ROM, p1 sub ROM, p3 the main
     // CPU's window onto the sub ROM at C00000; p2 sprites (M4), p5 Z80 and
     // p6 PCM (M5)
@@ -42,6 +53,7 @@ module sh_core (
     input       [7:0] throttle,
     input       [1:0] stick_mode,   // 0 analog, 1 d-pad, 2 both
     input             stick_hold,   // 1: the stick keeps its last position when released (OSD "re-centering off")
+    input       [1:0] cpu_boost,    // Enduro Racer only (M11): both 68000s at 10 (PCB), 12.5, 15 or 20 MHz
     input       [1:0] ana_curve,
     input       [1:0] ana_range,
     input       [7:0] dsw_a, dsw_b,
@@ -76,8 +88,15 @@ module sh_core (
 reg  [2:0] ph8;
 reg [15:0] acc10;
 reg        ph10, en1_f, en2_f;
-// 26032 / 65536 * 50.3496 MHz = 19.99994 MHz event rate
-wire [16:0] acc10_sum = {1'b0, acc10} + 17'd26032;
+// 26032 / 65536 * 50.3496 MHz = 19.99994 MHz event rate (two events per
+// CPU clock: phi1 then phi2). The M11 option raises it for Enduro Racer
+// only: the game is vblank-synced but CPU-bound, and drops frames under
+// load that MAME's zero-wait 68000 does not; 32540 / 39048 / 52064 give
+// 12.5 / 15 / 20 MHz for both 68000s, everything else at the PCB's rate.
+wire        boost_on = board_desc.game_id == 8'd2;
+wire [16:0] inc10 = !boost_on || cpu_boost == 2'd0 ? 17'd26032 :
+                    cpu_boost == 2'd1 ? 17'd32540 : cpu_boost == 2'd2 ? 17'd39048 : 17'd52064;
+wire [16:0] acc10_sum = {1'b0, acc10} + inc10;
 always @(posedge clk_sys) begin
     en1_f <= 1'b0; en2_f <= 1'b0;
     if (reset) begin ph8 <= 3'd0; acc10 <= 16'd0; ph10 <= 1'b0; end
@@ -365,11 +384,24 @@ assign p3_req  = m_sub_req;
 assign p3_addr = SDR_SUB_BASE[24:3] + {6'd0, m_sub_addr};
 
 // ---- main work RAM (16 KB) and the video RAMs (port B goes to the
-// renderers from M2 on)
-wire [15:0] m_wram_q, tile_q, text_q, spr_q, pal_q;
-sh_dpram #(.AW(13)) work_ram (.clk(clk_sys), .a_addr(ma[13:1]), .a_din(m_dout), .a_be(m_be),
-    .a_we(m_valid && m_wr && m_sel_wram && m_start), .a_dout(m_wram_q),
-    .b_clk(clk_sys), .b_addr(13'd0), .b_dout());
+// renderers from M2 on). The work RAM's port A is the CPU's, or the hiscore
+// module's byte writes while the CPUs are paused (M12), and its port B is
+// the hiscore module's reads: every hiscore.dat line of this board family
+// points into this RAM (040000 on the sharrier map, 20C000 on hangon's).
+// The 68000's even byte is the upper lane (be[1]).
+wire        hs_wram = shm ? (hs_addr[23:14] == 10'h010) : (hs_addr[23:14] == 10'h083);
+wire [12:0] wr_a    = hs_wr ? hs_addr[13:1] : ma[13:1];
+wire [15:0] wr_d    = hs_wr ? {hs_din, hs_din} : m_dout;
+wire  [1:0] wr_be   = hs_wr ? {~hs_addr[0], hs_addr[0]} : m_be;
+wire        wr_we   = hs_wr ? (hs_write && hs_wram) : (m_valid && m_wr && m_sel_wram && m_start);
+wire [15:0] m_wram_q, wram_hq, tile_q, text_q, spr_q, pal_q;
+sh_dpram #(.AW(13)) work_ram (.clk(clk_sys), .a_addr(wr_a), .a_din(wr_d), .a_be(wr_be),
+    .a_we(wr_we), .a_dout(m_wram_q),
+    .b_clk(clk_sys), .b_addr(hs_addr[13:1]), .b_dout(wram_hq));
+reg hs_lo_d;
+always @(posedge clk_sys) hs_lo_d <= hs_addr[0];
+assign hs_dout = hs_lo_d ? wram_hq[7:0] : wram_hq[15:8];
+wire _unused_hs = &{1'b0, hs_rd};   // the read port is the module's alone
 // tile RAM: 32 KB on the sharrier map (the tilemap reads the first 16 KB),
 // 16 KB on hangon's; sprite RAM 4 KB (256 entries) / 2 KB (128)
 sh_dpram #(.AW(14)) tileram (.clk(clk_sys), .a_addr(shm ? ma[14:1] : {1'b0, ma[13:1]}), .a_din(m_dout), .a_be(m_be),

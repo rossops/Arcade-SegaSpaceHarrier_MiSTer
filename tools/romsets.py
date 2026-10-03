@@ -31,12 +31,25 @@ DESC_SIZE = 64
 COINAGE = ("Free Play (if both) or 1C/1C,1C/1C 2/3,1C/1C 4/5,1C/1C 5/6,2C/1C 4/3,"
            "2C/1C 3/2 5/3 6/4,2C/3C,4C/1C,3C/1C,2C/1C,7C/1C,6C/1C,5C/1C,1C/3C,1C/2C,1C/1C")
 
+# MAME hiscore.dat lines (plugins/hiscore/hiscore.dat, 2026-10-03): address,
+# length, start byte, end byte. All in the main CPU's work RAM (no battery
+# RAM on this board, so every boot refills the table from ROM and hiscore.v
+# puts the saved one back once the game's defaults are in place). The
+# start/end bytes were read back from the games' RAM in MAME: the 4-byte
+# flag word of Hang-On and Space Harrier only becomes 01 about 20 s into
+# the attract, so those two restore then; Enduro Racer's lines match from
+# the first frames.
+HS_HANGON   = [(0x20C488, 4, 0x01, 0x00), (0x20D800, 0x4A0, 0x01, 0x20)]
+HS_SHARRIER = [(0x040488, 4, 0x01, 0x00), (0x043400, 0x3DC, 0x01, 0x20), (0x0437DC, 2, 0x00, 0x00)]
+HS_ENDUROR  = [(0x043400, 0x4A0, 0x01, 0x20), (0x043B90, 0x10, 0x99, 0x99)]
+
 ROMSETS = {
     # Hang-On (Rev A). MAME 0.289 `hangon`: two 68000s at 25.1748/4, YM2203
     # sound board, HANGON sprites/road, 3-bank palette.
     "hangon": {
         "name": "Hang-On",
         "zipfile": "hangon",
+        "hiscore": HS_HANGON,
         "year": "1985",
         "category": "Racing / Driving",
         # descriptor
@@ -111,6 +124,7 @@ ROMSETS = {
     "hangon1": {
         "name": "Hang-On (original)",
         "zipfile": "hangon",
+        "hiscore": HS_HANGON,
         "alt": "Hang-On",   # alternative: releases/_alternatives/_Hang-On/
         "year": "1985",
         "category": "Racing / Driving",
@@ -184,6 +198,7 @@ ROMSETS = {
     "hangon2": {
         "name": "Hang-On (Rev A, ride-on)",
         "zipfile": "hangon",
+        "hiscore": HS_HANGON,
         "alt": "Hang-On",   # alternative: releases/_alternatives/_Hang-On/
         "year": "1985",
         "category": "Racing / Driving",
@@ -260,6 +275,7 @@ ROMSETS = {
     "hangonvf": {
         "name": "VF (bootleg of Hang-On)",
         "zipfile": "hangon",
+        "hiscore": HS_HANGON,
         "alt": "Hang-On",   # alternative: releases/_alternatives/_Hang-On/
         "year": "1985",
         "category": "Racing / Driving",
@@ -331,6 +347,7 @@ ROMSETS = {
     "enduror": {
         "name": "Enduro Racer (Rev A, YM2151, FD1089B 317-0013A)",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
@@ -411,6 +428,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (Rev A, YM2151, mask ROM sprites, FD1089B 317-0013A)",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
@@ -479,6 +497,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (YM2151, FD1089B 317-0013A)",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
@@ -560,6 +579,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (bootleg of Rev A, YM2151) [decrypted]",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU
@@ -640,6 +660,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (YM2203, FD1089B 317-0013A)",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU, FD1089B 317-0013A
@@ -721,6 +742,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (bootleg, YM2203) [decrypted]",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         # descriptor: sharrier map and video at 10 MHz, no MCU
@@ -805,6 +827,7 @@ ROMSETS = {
         "alt": "Enduro Racer",
         "name": "Enduro Racer (bootleg set 1)",
         "zipfile": "enduror",
+        "hiscore": HS_ENDUROR,
         "year": "1986",
         "category": "Racing / Driving",
         "game_id": 2,
@@ -891,6 +914,7 @@ ROMSETS = {
     "sharrier": {
         "name": "Space Harrier (Rev A, 8751 315-5163A)",
         "zipfile": "sharrier",
+        "hiscore": HS_SHARRIER,
         "year": "1985",
         "category": "Shooter / 3rd Person",
         # descriptor: sharrier video (x32 sprites, SHARRIER road), both 68000s
@@ -1000,6 +1024,7 @@ ROMSETS = {
         "alt": "Space Harrier",
         "name": "Space Harrier (8751 315-5163)",
         "zipfile": "sharrier",
+        "hiscore": HS_SHARRIER,
         "year": "1985",
         "category": "Shooter / 3rd Person",
         # descriptor: sharrier video (x32 sprites, SHARRIER road), both 68000s

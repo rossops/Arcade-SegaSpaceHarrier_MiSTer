@@ -67,7 +67,8 @@ wire [23:1] tm_addr, ts_addr; wire tm_start, ts_start; wire [2:0] tm_fc, ts_fc;
 
 // BRAM ROM regions come from hex files in the bench (M2 on); no loader here
 sh_core core (
-    .clk_sys(clk_sys), .clk_ram(clk_ram), .reset(reset), .pause(1'b0), .board_desc(desc),
+    .clk_sys(clk_sys), .clk_ram(clk_ram), .reset(core_reset), .pause(hs_pause), .board_desc(desc),
+    .hs_addr(hs_addr), .hs_din(hs_din), .hs_dout(hs_dout), .hs_write(hs_write), .hs_rd(hs_rd), .hs_wr(hs_wr),
     .p0_req(p0_req), .p0_addr(p0_addr), .p0_dout(p0_dout), .p0_ack(p0_ack),
     .p1_req(p1_req), .p1_addr(p1_addr), .p1_dout(p1_dout), .p1_ack(p1_ack),
     .p2_req(p2_req), .p2_addr(p2_addr), .p2_dout(p2_dout), .p2_ack(p2_ack),
@@ -77,7 +78,7 @@ sh_core core (
     .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),
     .p1_buttons({5'd0, 1'b0, test_sw, 1'b0, coin1, p1_start, 6'd0} | hold_now | scr_btn),
     .stick_x(scr_x), .stick_y(scr_y), .throttle(scr_thr),
-    .stick_mode(scr_dpad ? 2'd2 : 2'd0), .stick_hold(scr_hold), .ana_curve(2'd0), .ana_range(2'd0),
+    .stick_mode(scr_dpad ? 2'd2 : 2'd0), .stick_hold(scr_hold), .cpu_boost(boost[1:0]), .ana_curve(2'd0), .ana_range(2'd0),
     .dsw_a(dsw_a), .dsw_b(dsw_b), .service(1'b0), .test(test_sw), .coin1(coin1), .coin2(1'b0),
     .r(r), .g(g), .b(b), .ce_vid(ce_pix), .hs(hs), .vs(vs), .hb(hb), .vb(vb),
     .audio_l(al), .audio_r(ar),
@@ -85,6 +86,116 @@ sh_core core (
     .trace_sub_addr(ts_addr), .trace_sub_start(ts_start), .trace_sub_fc(ts_fc),
     .dbg_snd_drop(dbg_snd_drop), .dbg_pcm_drop(dbg_pcm_drop), .dbg_z80_crash(dbg_z80_crash)
 );
+
+// ---- hiscore (+hiscore=<dir>): the emu top's sh_hiscore driven the way the
+// HPS drives it. <dir>/hs_cfg.bin (ioctl index 5, header + entries) and
+// <dir>/hs_dump.bin (the index 4 NVRAM file) stream through the 16-bit
+// ioctl path with the core held in reset; at +hs_check=N (start of that
+// frame) the work RAM is compared with the dump, then the OSD is "opened"
+// (extraction, pauses the CPUs) and the table is read back as an upload.
+string  hs_dir;
+reg     hs_en, hs_loading;
+initial begin hs_en = $value$plusargs("hiscore=%s", hs_dir); hs_loading = hs_en; end
+wire    core_reset = reset | hs_loading;
+reg         io_download = 1'b0, io_upload = 1'b0, io_wr = 1'b0, osd = 1'b0;
+reg  [26:0] io_addr = 27'd0;
+reg   [7:0] io_index = 8'd0;
+reg  [15:0] io_dout = 16'd0;
+wire [15:0] io_din;
+wire        hs_pause, hs_upload_req, hs_configured, hs_write, hs_rd, hs_wr;
+wire [23:0] hs_addr;
+wire  [7:0] hs_din, hs_dout;
+sh_hiscore hiscore (
+    .clk(clk_sys), .reset(core_reset), .paused(hs_pause), .autosave(1'b1), .OSD_STATUS(osd),
+    .ioctl_download(io_download), .ioctl_upload(io_upload), .ioctl_wr(io_wr), .ioctl_addr(io_addr),
+    .ioctl_index(io_index), .ioctl_dout(io_dout), .ioctl_din(io_din),
+    .upload_req(hs_upload_req), .configured(hs_configured),
+    .ram_addr(hs_addr), .ram_din(hs_din), .ram_dout(hs_dout), .ram_write(hs_write), .ram_rd(hs_rd), .ram_wr(hs_wr),
+    .pause_req(hs_pause)
+);
+reg [7:0] hs_cfg [0:255];
+reg [7:0] hs_dump [0:2047];
+integer hs_cfg_n = 0, hs_dump_n = 0, hs_check;
+initial begin if (!$value$plusargs("hs_check=%d", hs_check)) hs_check = 60; end
+// one ioctl download, 16-bit words, little-endian like hps_io WIDE
+task automatic io_send(input [7:0] index, input integer n, input integer which);
+    integer i;
+    begin
+        io_index = index; io_addr = 0;
+        @(posedge clk_sys); io_download <= 1'b1;
+        repeat (8) @(posedge clk_sys);
+        for (i = 0; i < n; i = i + 2) begin
+            io_addr <= i;
+            io_dout <= which ? {hs_dump[i+1], hs_dump[i]} : {hs_cfg[i+1], hs_cfg[i]};
+            io_wr   <= 1'b1;
+            @(posedge clk_sys); io_wr <= 1'b0;
+            repeat (7) @(posedge clk_sys);
+        end
+        io_download <= 1'b0;
+        repeat (8) @(posedge clk_sys);
+    end
+endtask
+// compare the work RAM with the dump, entry by entry (cfg: 16-byte header,
+// then 4 address bytes, 2 length bytes, start, end per line; every line of
+// this board family points into the main CPU's 16 KB work RAM)
+task automatic hs_verify;
+    integer e, i, n_ent, bad, total, len; reg [23:0] a; reg [7:0] exp, got; reg [15:0] w;
+    begin
+        n_ent = (hs_cfg_n - 16) / 8; total = 0; bad = 0;
+        for (e = 0; e < n_ent; e = e + 1) begin
+            a = {hs_cfg[16 + 8*e + 1], hs_cfg[16 + 8*e + 2], hs_cfg[16 + 8*e + 3]};
+            len = {hs_cfg[16 + 8*e + 4], hs_cfg[16 + 8*e + 5]};
+            for (i = 0; i < len; i = i + 1) begin
+                w = core.work_ram.mem[a[13:1]];
+                got = a[0] ? w[7:0] : w[15:8];
+                exp = hs_dump[total];
+                if (got != exp) begin bad = bad + 1; if (bad <= 8) $display("HISCORE mismatch %06x: ram %02x dump %02x", a, got, exp); end
+                total = total + 1; a = a + 24'd1;
+            end
+        end
+        $display("HISCORE restore check frame %0d: %0d/%0d bytes match -> %s", frame, total - bad, total, bad == 0 ? "PASS" : "FAIL");
+    end
+endtask
+// read the table back the way arcade_nvm_save does (index 4 upload)
+task automatic hs_upload_check;
+    integer i, bad; reg [15:0] w;
+    begin
+        bad = 0; io_index = 8'd4; io_addr = 0; io_upload <= 1'b1;
+        repeat (16) @(posedge clk_sys);
+        for (i = 0; i < hs_dump_n; i = i + 2) begin
+            io_addr <= i;
+            repeat (12) @(posedge clk_sys);
+            w = io_din;
+            if (w[7:0] != hs_dump[i] || (i + 1 < hs_dump_n && w[15:8] != hs_dump[i+1])) begin
+                bad = bad + 1;
+                if (bad <= 8) $display("HISCORE upload mismatch @%0d: %04x vs %02x%02x", i, w, hs_dump[i+1], hs_dump[i]);
+            end
+        end
+        io_upload <= 1'b0;
+        $display("HISCORE upload check: %0d bad words -> %s", bad, bad == 0 ? "PASS" : "FAIL");
+    end
+endtask
+integer hs_fd;
+initial begin
+    if (hs_en) begin
+        hs_fd = $fopen({hs_dir, "/hs_cfg.bin"}, "rb");  hs_cfg_n  = $fread(hs_cfg, hs_fd);  $fclose(hs_fd);
+        hs_fd = $fopen({hs_dir, "/hs_dump.bin"}, "rb"); hs_dump_n = $fread(hs_dump, hs_fd); $fclose(hs_fd);
+        $display("HISCORE cfg %0d bytes, dump %0d bytes", hs_cfg_n, hs_dump_n);
+        wait (!reset);
+        repeat (20) @(posedge clk_sys);
+        io_send(8'd5, hs_cfg_n, 0);
+        io_send(8'd4, (hs_dump_n + 1) & ~1, 1);
+        @(posedge clk_sys); hs_loading <= 1'b0;
+        $display("HISCORE loaded, configured=%0d, core released at frame %0d", hs_configured, frame);
+        wait (frame == hs_check);
+        hs_verify;
+        osd <= 1'b1; repeat (200) @(posedge clk_sys); osd <= 1'b0;
+        repeat (20000) @(posedge clk_sys);
+        $display("HISCORE after OSD open: upload_req seen=%0d", hs_upload_req);
+        hs_upload_check;
+    end
+end
+
 // the sound board's sticky debug flags, logged the moment they set
 wire dbg_snd_drop, dbg_pcm_drop, dbg_z80_crash;
 reg  z80_crash_d;
@@ -251,6 +362,67 @@ initial begin
 end
 wire [15:0] hold_now = (hold_from >= 0 && frame >= hold_from) ? hold_mask[15:0] : 16'd0;
 
+// +boost=N: the M11 CPU speed option (0 PCB, 1 12.5 MHz, 2 15 MHz, 3 20 MHz)
+integer boost = 0;
+initial if (!$value$plusargs("boost=%d", boost)) boost = 0;
+// ---- update cadence: does sprite RAM change between consecutive frames? The
+// game is vblank-synced and drops a frame when its 68000 overruns; MAME's
+// zero-wait 68000 keeps every frame once the race is under way (M11)
+reg [31:0] cad_hash = 0, cad_prev = 0;
+integer    cad_i, cad_upd = 0, cad_tot = 0, cad_last = -1;
+reg [99:0] cad_hist = 0;
+always @(posedge clk_sys) begin
+    if (core.vcnt == 0 && core.hcnt == 0 && frame != cad_last) begin
+        cad_last = frame;
+        cad_hash = 0;
+        for (cad_i = 0; cad_i < 2048; cad_i = cad_i + 1) cad_hash = cad_hash * 31 + {16'd0, core.spriteram.mem[cad_i]};
+        if (frame > 1) begin
+            cad_tot = cad_tot + 1;
+            cad_hist = {cad_hist[98:0], cad_hash != cad_prev};
+            if (cad_hash != cad_prev) cad_upd = cad_upd + 1;
+        end
+        cad_prev = cad_hash;
+        if (frame % 100 == 0) begin
+            $display("CADENCE f=%0d updated %0d of %0d frames (last 100: %b)", frame, cad_upd, cad_tot, cad_hist);
+            cad_upd = 0; cad_tot = 0;
+        end
+    end
+end
+// ---- where the 68000s wait (M11): per 100 frames, clocks each CPU has a bus
+// cycle open, and of those how many are waits on the ROM cache and on the
+// shared RAM arbiter. BUSWAIT lines.
+integer bw_m_cyc = 0, bw_m_rom = 0, bw_m_shr = 0, bw_s_cyc = 0, bw_s_rom = 0, bw_s_shr = 0, bw_last = -1;
+always @(posedge clk_sys) begin
+    if (core.c_valid) begin
+        bw_m_cyc = bw_m_cyc + 1;
+        if (core.m_sel_rom && core.m_rd && !core.m_rom_ack) bw_m_rom = bw_m_rom + 1;
+        if (core.m_sel_shared && !core.m_shr_ack) bw_m_shr = bw_m_shr + 1;
+    end
+    if (core.s_valid) begin
+        bw_s_cyc = bw_s_cyc + 1;
+        if (core.s_sel_rom && core.s_rd && !core.s_rom_ack) bw_s_rom = bw_s_rom + 1;
+        if (core.s_sel_shared && !core.s_shr_ack) bw_s_shr = bw_s_shr + 1;
+    end
+    if (frame % 100 == 0 && frame != bw_last) begin
+        bw_last = frame;
+        $display("BUSWAIT f=%0d main: cycle-open %0d rom-wait %0d shared-wait %0d | sub: cycle-open %0d rom-wait %0d shared-wait %0d (of %0d clocks in 100 frames)",
+                 frame, bw_m_cyc, bw_m_rom, bw_m_shr, bw_s_cyc, bw_s_rom, bw_s_shr, 100 * 400 * 262 * 8);
+        bw_m_cyc = 0; bw_m_rom = 0; bw_m_shr = 0; bw_s_cyc = 0; bw_s_rom = 0; bw_s_shr = 0;
+    end
+end
+// ---- +pcsample=F: both 68000s' instruction addresses sampled every 32 clocks
+// through frames F..F+29 (pcsample_main.txt, pcsample_sub.txt), for a histogram
+// of where a CPU spends a dropped frame (M11)
+integer pcs_from = -1, pcs_n = 0, fpm = 0, fps = 0;
+initial begin
+    if ($value$plusargs("pcsample=%d", pcs_from)) begin fpm = $fopen("pcsample_main.txt", "w"); fps = $fopen("pcsample_sub.txt", "w"); end
+end
+always @(posedge clk_sys) begin
+    if (pcs_from >= 0 && frame >= pcs_from && frame < pcs_from + 30) begin
+        pcs_n = pcs_n + 1;
+        if (pcs_n[4:0] == 0) begin $fwrite(fpm, "%06x\n", {mt_a_ir, 1'b0}); $fwrite(fps, "%06x\n", {st_a_ir, 1'b0}); end
+    end
+end
 // +stick_hold: the OSD "re-centering off" (held stick); +dpad: analog+d-pad mode
 reg scr_hold = 1'b0, scr_dpad = 1'b0;
 initial begin

@@ -11,7 +11,7 @@
 # build links the library, not the framework).
 set -e
 SRC=${MAME_SRC:-$HOME/Code/mame}
-DST=${MAME_REF_DIR:-$HOME/Code/mame-ref}
+DST=${MAME_REF_DIR:-$HOME/Code/mame-ref}   # build it here; a moved worktree keeps absolute paths in build/ and must be cleaned
 git -C "$SRC" fetch -q origin tag mame0289 2>/dev/null || true
 [ -d "$DST" ] || git -C "$SRC" worktree add -q "$DST" mame0289
 cd "$DST"

@@ -12,6 +12,14 @@ attract sequence's audio envelope correlates 0.94 against MAME's own
 recording, with the video still pixel-exact while it runs. `docs/DESIGN.md` has the plan, the per-milestone findings and
 the open questions; `docs/references.md` says where every file came from.
 
+High scores survive a power cycle on every supported set: the board has
+no battery RAM, so the core carries JimmyStones' Hiscores_MiSTer and the
+MRA's nvram file is the game's score table, restored once the game has
+set up its defaults (right after boot on Enduro Racer, a few seconds into
+the attract on Hang-On and Space Harrier, the point MAME's hiscore.dat
+lines wait for). The pause button toggles, the OSD can hold the pause,
+and the picture dims after ten seconds paused.
+
 ## Status
 
 | Milestone | What it proves | State |
@@ -26,6 +34,8 @@ the open questions; `docs/references.md` says where every file came from.
 | M7 | Space Harrier (sharrier video, i8751) | done (2026-09-05) |
 | M7b | Space Harrier gamepad feel (optional): MAME-style stick slew | not started |
 | M8 | Enduro Racer (FD1089B, YM2151 board) | done (2026-09-06) |
+| M11 | Enduro Racer 60 fps mode (optional): an OSD CPU speed for both 68000s | measured 2026-09-07: not a CPU limit; a 20 MHz 68000 trims a quarter second of race-start stutter in MAME and the core alike, nothing more; the switch's fate is the user's call |
+| M12 | Pause and hiscores (JimmyStones' Pause_MiSTer and Hiscores_MiSTer): button toggle, OSD hold, dimming; score tables saved for every set | done (2026-10-03): 21,027 ALMs (50%), 403 of 553 M10K, no negative slack |
 | M9 | Super Hang-On conversions | not started |
 | M10 | Board reference doc + recovered PAL equations (optional) | not started |
 | M11 | Enduro Racer 60 fps mode via OSD CPU overclock (optional) | not started |
@@ -99,6 +109,13 @@ behind each entry.
   page, and the older rule brings them back. So the older MAME wins on
   hardware evidence, and the M8 audio gate records its reference with
   a MAME 0.289 built with that rule restored (tools/mame_ref_build.sh).
+- Enduro Racer has an opt-in "Enduro Racer CPU" setting, off by default,
+  that runs both 68000s at 12.5, 15 or 20 MHz instead of the PCB's 10.
+  The game is vblank-synced but CPU-bound: MAME's zero-wait 68000 drops
+  a fifth of the frames in the busy first seconds of a race, and ours,
+  behind an SDRAM cache, drops more. Everything else stays at the PCB's
+  rate. This is a deliberate step away from the hardware, on the
+  player's say-so, and the default is the PCB.
 - Enduro Racer's FD1089B is decrypted in the core, not in the MRA: a
   combinational table block between the ROM cache and the 68000, keyed
   by the set's 317-0013A image and the fetch type, ported from MAME's

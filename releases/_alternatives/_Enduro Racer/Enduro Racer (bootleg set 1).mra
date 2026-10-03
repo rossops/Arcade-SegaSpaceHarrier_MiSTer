@@ -112,6 +112,10 @@
     <!-- key -->
       <part name="317-0013a.key" crc="a965b2da"/>
   </rom>
+  <rom index="5">
+    <part>00 ff ff ff ff ff 00 04 00 04 00 01 00 0f 08 00 00 04 34 00 04 a0 01 20 00 04 3b 90 00 10 99 99</part>
+  </rom>
+  <nvram index="4" size="1200"/>
   <switches default="FF,7E" base="0">
     <dip bits="0,3" name="Coin A" ids="Free Play (if both) or 1C/1C,1C/1C 2/3,1C/1C 4/5,1C/1C 5/6,2C/1C 4/3,2C/1C 3/2 5/3 6/4,2C/3C,4C/1C,3C/1C,2C/1C,7C/1C,6C/1C,5C/1C,1C/3C,1C/2C,1C/1C"/>
     <dip bits="4,7" name="Coin B" ids="Free Play (if both) or 1C/1C,1C/1C 2/3,1C/1C 4/5,1C/1C 5/6,2C/1C 4/3,2C/1C 3/2 5/3 6/4,2C/3C,4C/1C,3C/1C,2C/1C,7C/1C,6C/1C,5C/1C,1C/3C,1C/2C,1C/1C"/>

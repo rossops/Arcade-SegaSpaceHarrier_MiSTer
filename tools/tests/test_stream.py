@@ -27,6 +27,8 @@ def expand_mra(text, zf):
         return data[:int(length, 16)] if length else data
     while i < len(lines):
         s = lines[i].strip()
+        if s == "</rom>":
+            break   # the hiscore config (<rom index="5">) is not part of the stream
         m = re.match(r'<part repeat="(\d+)">([0-9A-Fa-f]{2})</part>', s)
         if m:
             out += bytes([int(m.group(2), 16)]) * int(m.group(1))
@@ -123,3 +125,27 @@ def test_empty_middle_region_pads_to_slot():
     assert romsets.ORDER[last] == "zoom"   # no mcu/key either; stream ends there
     parts = gen_mra.region_parts("flat", [], romsets.SLOT["mainops"], "00")
     assert parts == [f'      <part repeat="{romsets.SLOT["mainops"]}">00</part>']
+
+
+@pytest.mark.parametrize("key", [k for k, rs in romsets.ROMSETS.items() if "hiscore" in rs])
+def test_hiscore_config(key):
+    """hiscore.v parses the header and lines back from the byte stream with
+    two-byte lengths; every line must point into the main CPU's work RAM on
+    the set's memory map (the only RAM the core's hiscore port serves), the
+    table must fit the score buffer, and the MRA's nvram size must be the
+    entries back to back or the host truncates the file."""
+    rs = romsets.ROMSETS[key]
+    cfg = gen_mra.hiscore_config(rs)
+    assert len(cfg) == 16 + 8 * len(rs["hiscore"])
+    assert cfg[15] == 0                        # no change mask: lines start at byte 16
+    wram = 0x040000 if rs.get("sharrier") else 0x20C000
+    for n, (addr, length, start, end) in enumerate(rs["hiscore"]):
+        line = cfg[16 + 8 * n:24 + 8 * n]
+        assert int.from_bytes(line[0:4], "big") == addr
+        assert int.from_bytes(line[4:6], "big") == length
+        assert line[6:8] == bytes([start, end])
+        assert wram <= addr and addr + length <= wram + 0x4000, "not in the main work RAM"
+    assert gen_mra.hiscore_size(rs) <= gen_mra.HS_BUFFER
+    mra = gen_mra.make_mra(key, rs)
+    assert f'<nvram index="4" size="{gen_mra.hiscore_size(rs)}"/>' in mra
+    assert mra.index('<rom index="5">') < mra.index("<nvram")   # Main loads in document order

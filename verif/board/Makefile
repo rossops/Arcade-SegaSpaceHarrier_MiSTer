@@ -7,6 +7,7 @@ SRCS := rtl/sh_pkg.sv rtl/video/sh_video_timing.sv rtl/mem/sh_dpram.sv \
   rtl/cpu/fx68k/fx68k.sv rtl/cpu/fx68k/fx68kAlu.sv rtl/cpu/fx68k/uaddrPla.sv \
   rtl/audio/sh_segapcm_5218.sv rtl/audio/sh_soundsys.sv rtl/video/sh_palette_5242.sv \
   rtl/video/sh_tilerom.sv rtl/video/sh_tilemap_5012.sv rtl/video/sh_roadrom.sv rtl/video/sh_road.sv rtl/video/sh_zoomrom.sv rtl/video/sh_sprite.sv \
+  rtl/hiscore/hiscore.v rtl/hiscore/sh_hiscore.sv \
   rtl/sh_core.sv verif/board/sdram_model.sv verif/board/tb_board.sv
 VFLAGS := -Wno-fatal -Wno-lint -Wno-style -Werror-PINMISSING -Wno-BLKANDNBLK -Wno-MULTIDRIVEN -Wno-UNOPTFLAT \
   -DSIMULATION --timing -O2 --x-assign fast --x-initial fast \
