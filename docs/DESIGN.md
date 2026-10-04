@@ -415,6 +415,12 @@ it 8 counts a frame and stops where it is released, an analog deflection
 past the dead zone sets it and letting go leaves it there (the user's
 request after the first playable Space Harrier build, 2026-09-05).
 
+"Invert stick Y" (status bit 11, default Off, hidden unless the
+descriptor is Space Harrier) swaps the stick's up and down, as issue #4
+asked for. The top flips the stick before the core sees
+it, swapping d-pad up and down and negating analog Y (-128 clamps to
+127), so the shaping, re-centering and ADC reversal all run unchanged.
+
 ### Verification tooling
 
 Everything carries over: `mame_capture.py`/`frame_diff.py`,

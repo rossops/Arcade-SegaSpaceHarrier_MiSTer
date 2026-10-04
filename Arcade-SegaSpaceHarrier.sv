@@ -137,6 +137,7 @@ localparam CONF_STR = {
     "O[24:23],Analog response,Linear,Soft,Softer;",
     "O[26:25],Analog range,100%,75%,50%;",
     "O[27],Stick re-centering,On,Off;",
+    "H5O[11],Invert stick Y,Off,On;",
     "O[29:28],Enduro Racer CPU,10 MHz (PCB),12.5 MHz,15 MHz,20 MHz;",
     "O[10],Pause when OSD open,Off,On;",
     "O[30],Dim video after 10s,On,Off;",
@@ -169,6 +170,7 @@ wire        ioctl_download, ioctl_upload, ioctl_wr, ioctl_wait;
 wire [15:0] ioctl_index;
 wire [26:0] ioctl_addr;
 wire [15:0] ioctl_dout, ioctl_din;
+wire        sh_game;   // Space Harrier descriptor; assigned with the inputs below
 wire [31:0] joystick_0, joystick_1;
 wire [15:0] joystick_l_analog_0;
 wire [15:0] joystick_r_analog_0;
@@ -197,7 +199,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io (
 
     .buttons(buttons),
     .status(status),
-    .status_menumask({11'd0, ~hs_configured, 4'd0}),   // H4: no hiscore table in the MRA
+    .status_menumask({10'd0, ~sh_game, ~hs_configured, 4'd0}),   // H4: no hiscore table in the MRA, H5: not Space Harrier
     .gamma_bus(gamma_bus),
 
     .ioctl_download(ioctl_download),
@@ -290,6 +292,14 @@ wire [1:0] stick_mode = (status[9:8] == 2'd0) ? 2'd1 : (status[9:8] == 2'd1) ? 2
 
 wire [15:0] p1_btn = joystick_0[15:0];
 wire        sh_btns   = board_desc.sharrier_vid;
+assign      sh_game   = sh_btns;
+// Invert stick Y (issue #4), Space Harrier only: up and down swapped.
+// Swaps d-pad up/down and negates analog Y (-128 clamps to 127) before
+// the core, so the shaping, re-centering and ADC paths see a normal stick.
+wire        inv_y     = status[11] & sh_btns;
+wire [7:0]  ana_y     = joystick_l_analog_0[15:8];
+wire [7:0]  stick_y   = !inv_y ? ana_y : (ana_y == 8'h80) ? 8'h7F : -ana_y;
+wire [15:0] core_btn  = inv_y ? {p1_btn[15:4], p1_btn[2], p1_btn[3], p1_btn[1:0]} : p1_btn;
 wire        btn_coin  = sh_btns ? p1_btn[8]  : p1_btn[7];
 wire        btn_pause = sh_btns ? p1_btn[9]  : p1_btn[8];
 wire        btn_test  = sh_btns ? p1_btn[10] : p1_btn[9];
@@ -347,8 +357,8 @@ sh_core core (
     .p5_req(p5_req), .p5_addr(p5_addr), .p5_dout(p5_dout), .p5_ack(p5_ack),
     .p6_req(p6_req), .p6_addr(p6_addr), .p6_dout(p6_dout), .p6_ack(p6_ack),
     .brm_wr(brm_wr), .brm_addr(brm_addr), .brm_din(brm_din),
-    .p1_buttons(p1_btn),
-    .stick_x(joystick_l_analog_0[7:0]), .stick_y(joystick_l_analog_0[15:8]),
+    .p1_buttons(core_btn),
+    .stick_x(joystick_l_analog_0[7:0]), .stick_y(stick_y),
     .throttle(joystick_r_analog_0[15:8] ^ 8'h80), .stick_mode(stick_mode), .stick_hold(status[27]), .cpu_boost(status[29:28]),
     .ana_curve(status[24:23]), .ana_range(status[26:25]),
     .dsw_a(dsw_a), .dsw_b(dsw_b),

@@ -116,7 +116,7 @@ every convention below, and their git history shows what each decision cost.
   Same for a trailing `# comment` on an assignment line: Tcl reads it as
   extra arguments, the assignment fails, and the flow stops with no
   output_files at all (cost a build on 2026-09-03).
-- Upload with `tools/mister_ssh.sh put|run` (DE10-Nano at 192.168.1.63,
+- Upload with `tools/mister_ssh.sh put|run` (DE10-Nano at 192.168.68.246,
   root; password known to the user). Ship split clone zips
   (`tools/make_clone_zips.py`), not merged ones. For many files, tar with
   `COPYFILE_DISABLE=1`, one `put`, then `tar -xof` on the box (plain -xf

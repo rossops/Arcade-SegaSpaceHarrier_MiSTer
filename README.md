@@ -116,6 +116,9 @@ behind each entry.
   behind an SDRAM cache, drops more. Everything else stays at the PCB's
   rate. This is a deliberate step away from the hardware, on the
   player's say-so, and the default is the PCB.
+- Space Harrier has an "Invert stick Y" setting, off by default, for
+  anyone who wants the stick's up and down swapped (issue #4). Off
+  matches MAME's mapping; On is a player preference layered on top.
 - Enduro Racer's FD1089B is decrypted in the core, not in the MRA: a
   combinational table block between the ROM cache and the 68000, keyed
   by the set's 317-0013A image and the fetch type, ported from MAME's
